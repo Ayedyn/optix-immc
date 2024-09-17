@@ -20,12 +20,12 @@ cfg.srcdir=[0 0 1];
 
 cfg.prop=[0.000,  0, 1, 1;
           0.005,  1, 0, 1.37;  %box
-          0.010, 10, 0, 1]; %sphere
+          0.010, 10, 0, 1.37]; %sphere 
 
 % time-gate
 cfg.tstart=0;
 cfg.tend=5e-9;
-cfg.tstep=5e-10;
+cfg.tstep=5e-9;
 
 % dual grid MC
 cfg.method='grid';

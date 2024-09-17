@@ -7,6 +7,8 @@
 #include "mmc_optix_launchparam.h"
 #include "optix7.h"
 #include <vector>
+#include "implicit_capsule.h"
+#include "implicit_sphere.h"
 
 /*! SBT record for a raygen program */
 struct __align__( OPTIX_SBT_RECORD_ALIGNMENT ) RaygenRecord
@@ -85,13 +87,21 @@ struct OptixParams {
 
     /*! vector of gashandles */
     std::vector<OptixTraversableHandle> gashandles;
+    std::vector<OptixTraversableHandle> inside_primitive_handles;
+    std::vector<OptixTraversableHandle> outside_primitive_handles;
+
+    /*! vector of capsules for immc */
+    std::vector<immc::ImplicitCapsule> capsules;
+
+    /*! vector of spheres for immc */
+    std::vector<immc::ImplicitSphere> spheres;
 };
 
 // struct for surface mesh of each medium
 typedef struct surfaceMesh {
     std::vector<uint3> face;
-    std::vector<float3> norm;
-    std::vector<unsigned int> nbtype;
+    std::vector<float3> norm; // normal vector
+    std::vector<unsigned int> nbtype; // neighboring medium type
 } surfmesh;
 
 #ifdef __cplusplus
@@ -108,8 +118,37 @@ void createRaygenPrograms(OptixParams* optixcfg);
 void createMissPrograms(OptixParams* optixcfg);
 void createHitgroupPrograms(OptixParams* optixcfg);
 void prepareSurfMesh(tetmesh *tmesh, surfmesh *smesh);
-OptixTraversableHandle buildAccel(tetmesh *tmesh, surfmesh* smesh, OptixParams* optixcfg,
-    unsigned int primitiveoffset);
+OptixTraversableHandle buildSurfMeshAccel(tetmesh *tmesh, surfmesh* smesh, OptixParams* optixcfg,
+    const unsigned int primitiveoffset);
+
+static OptixTraversableHandle buildSurfacesWithPrimitives(tetmesh* mesh, 
+		surfmesh* smesh, OptixParams* optixcfg, 
+		unsigned int& primitiveoffset, const float capsuleWidthAdjustment, 
+		const float sphereRadiusAdjustment);
+
+static void buildImplicitASHierarchy(
+    tetmesh* tmesh, surfmesh* smesh, 
+    OptixParams* optixcfg, unsigned int& primitiveoffset, 
+    const float WIDTH_ADJ); 
+
+static OptixTraversableHandle createCapsuleAccelStructure(
+     OptixParams* optixcfg,
+     std::vector<float3>& vertexVector,
+     std::vector<float>& widthVector,
+     const unsigned int primitiveOffset);
+ 
+
+static OptixTraversableHandle createSphereAccelStructure(                                     
+     OptixParams* optixcfg,
+     const std::vector <float3>& sphere_centers, 
+     const std::vector<float>& sphere_radii,
+     const unsigned int primitiveOffset
+     );
+
+static OptixTraversableHandle createInstanceAccelerationStructure(
+                 OptixParams* optixcfg, 
+                 std::vector<OptixTraversableHandle> handles_to_combine);
+
 void createPipeline(OptixParams* optixcfg);
 void buildSBT(tetmesh* tmesh, surfmesh* smesh, OptixParams* optixcfg);
 void prepLaunchParams(mcconfig* cfg, tetmesh* mesh, GPUInfo* gpu,

@@ -1,0 +1,23 @@
+{
+	"Session":{
+		"ID":"optix",
+		"OutputType":"fluence",
+		"RayTracer":"grid",
+		"Photons":100000000
+	},
+	"Mesh":{
+		"MeshID":"optix",
+		"InitElem":719
+	},
+	"Forward":{
+		"T0":0,
+		"T1":5e-09,
+		"Dt":5e-09
+	},
+	"Optode":{
+		"Source":{
+			"Pos":[30,30,0.01],
+			"Dir":[0,0,1]
+		}
+	}
+}

@@ -19,7 +19,7 @@ MMCDIR  ?= $(ROOTDIR)
 MMCSRC :=$(MMCDIR)/src
 
 CUDAHOME ?= /usr/local/cuda
-OPTIXHOME ?= /pub/optix-7.5
+OPTIXHOME ?= /home/users/aidenlewis/OptiX-7.6.0
 
 CXX        := g++
 AR         := $(CC)

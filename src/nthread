@@ -1,0 +1,1751 @@
+mmc_cu_host.cu:    uint meshlen = ((cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : mesh->ne)
+mmc_cu_host.cu:                   << cfg->nbuffer; // use 4 copies to reduce racing
+mmc_cu_host.cu:    cfg->crop0.w = meshlen * cfg->maxgate; // offset for the second buffer
+mmc_cu_host.cu:    uint detreclen = (2 + ((cfg->ismomentum) > 0)) * mesh->prop +
+mmc_cu_host.cu:                     (cfg->issaveexit > 0) * 6 + 1;
+mmc_cu_host.cu:    MCXParam param = {make_float3(cfg->srcpos.x, cfg->srcpos.y, cfg->srcpos.z),
+mmc_cu_host.cu:                      make_float3(cfg->srcdir.x, cfg->srcdir.y, cfg->srcdir.z),
+mmc_cu_host.cu:                      cfg->tstart,
+mmc_cu_host.cu:                      cfg->tend,
+mmc_cu_host.cu:                      (uint)cfg->isreflect,
+mmc_cu_host.cu:                      (uint)cfg->issavedet,
+mmc_cu_host.cu:                      (uint)cfg->issaveexit,
+mmc_cu_host.cu:                      (uint)cfg->ismomentum,
+mmc_cu_host.cu:                      (uint)cfg->isatomic,
+mmc_cu_host.cu:                      (uint)cfg->isspecular,
+mmc_cu_host.cu:                      1.f / cfg->tstep,
+mmc_cu_host.cu:                      cfg->minenergy,
+mmc_cu_host.cu:                      cfg->maxdetphoton,
+mmc_cu_host.cu:                      (uint)cfg->detnum,
+mmc_cu_host.cu:                      (int)cfg->voidtime,
+mmc_cu_host.cu:                      (int)cfg->srctype,
+mmc_cu_host.cu:                      cfg->srcparam1,
+mmc_cu_host.cu:                      cfg->srcparam2,
+mmc_cu_host.cu:                      (uint)cfg->issaveref,
+mmc_cu_host.cu:                      (uint)cfg->maxgate,
+mmc_cu_host.cu:                      (uint)cfg->debuglevel,
+mmc_cu_host.cu:                      cfg->outputtype,
+mmc_cu_host.cu:                      cfg->mcmethod,
+mmc_cu_host.cu:                      cfg->method,
+mmc_cu_host.cu:                      1.f / cfg->unitinmm,
+mmc_cu_host.cu:                      cfg->srcdir.w,
+mmc_cu_host.cu:                      cfg->nout,
+mmc_cu_host.cu:                      cfg->roulettesize,
+mmc_cu_host.cu:                      cfg->srcnum,
+mmc_cu_host.cu:                      cfg->crop0,
+mmc_cu_host.cu:                      cfg->bary0,
+mmc_cu_host.cu:                      cfg->e0,
+mmc_cu_host.cu:                      cfg->isextdet,
+mmc_cu_host.cu:                      cfg->nbuffer,
+mmc_cu_host.cu:                      (uint)(mesh->prop + 1 + cfg->isextdet) + cfg->detnum,
+mmc_cu_host.cu:                      (uint)(MIN((MAX_PROP - (mesh->prop + 1 + cfg->isextdet) - cfg->detnum), ((mesh->ne) << 2)) >> 2), /*max count of elem normal data in const mem*/
+mmc_cu_host.cu:                      cfg->issaveseed,
+mmc_cu_host.cu:                      cfg->seed
+mmc_cu_host.cu:        cfg->debuglevel = cfg->debuglevel & (~MCX_DEBUG_PROGRESS);
+mmc_cu_host.cu:    if (threadid < MAX_DEVICE && cfg->deviceid[threadid] == '\0') {
+mmc_cu_host.cu:    gpuid = cfg->deviceid[threadid] - 1;
+mmc_cu_host.cu:        if (cfg->exportfield == NULL) {
+mmc_cu_host.cu:            cfg->exportfield = mesh->weight;
+mmc_cu_host.cu:        if (cfg->exportdetected == NULL) {
+mmc_cu_host.cu:            cfg->exportdetected = (float*)malloc(hostdetreclen * cfg->maxdetphoton * sizeof(float));
+mmc_cu_host.cu:        if (cfg->issaveseed && cfg->exportseed == NULL) {
+mmc_cu_host.cu:            cfg->exportseed = (unsigned char*)malloc(cfg->maxdetphoton * (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cu_host.cu:        cfg->energytot = 0.f;
+mmc_cu_host.cu:        cfg->energyesc = 0.f;
+mmc_cu_host.cu:        cfg->runtime = 0;
+mmc_cu_host.cu:                      sizeof(float) * cfg->maxdetphoton * hostdetreclen +
+mmc_cu_host.cu:            MIN(((cfg->tend - cfg->tstart) / cfg->tstep + 0.5), gpu[gpuid].maxgate);
+mmc_cu_host.cu:    if (!cfg->autopilot) {
+mmc_cu_host.cu:        uint gates = (uint)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_cu_host.cu:        gpu[gpuid].autothread = cfg->nthread;
+mmc_cu_host.cu:        gpu[gpuid].autoblock = cfg->nblocksize;
+mmc_cu_host.cu:        if (cfg->maxgate == 0) {
+mmc_cu_host.cu:            cfg->maxgate = gates;
+mmc_cu_host.cu:        } else if ((uint)cfg->maxgate > gates) {
+mmc_cu_host.cu:            cfg->maxgate = gates;
+mmc_cu_host.cu:        gpu[gpuid].maxgate = cfg->maxgate;
+mmc_cu_host.cu:    uint nflen = mesh->nf * cfg->maxgate;
+mmc_cu_host.cu:    for (i = 0; cfg->deviceid[i]; i++) {
+mmc_cu_host.cu:        fullload += cfg->workload[i];
+mmc_cu_host.cu:        for (i = 0; cfg->deviceid[i]; i++) {
+mmc_cu_host.cu:            cfg->workload[i] = gpu[cfg->deviceid[i] - 1].core;
+mmc_cu_host.cu:    for (i = 0; cfg->deviceid[i]; i++)
+mmc_cu_host.cu:        if (cfg->workload[i] > 0.f) {
+mmc_cu_host.cu:            fullload += cfg->workload[i];
+mmc_cu_host.cu:    threadphoton = (int)(cfg->nphoton * cfg->workload[gpuid] /
+mmc_cu_host.cu:                         (fullload * gpu[gpuid].autothread * cfg->respin));
+mmc_cu_host.cu:        (int)(cfg->nphoton * cfg->workload[gpuid] / (fullload * cfg->respin) -
+mmc_cu_host.cu:    field = (float*)calloc(sizeof(float) * meshlen * 2, cfg->maxgate);
+mmc_cu_host.cu:    dref = (float*)calloc(sizeof(float) * mesh->nf, cfg->maxgate);
+mmc_cu_host.cu:    Pdet = (float*)calloc(cfg->maxdetphoton * sizeof(float), hostdetreclen);
+mmc_cu_host.cu:    fieldlen = meshlen * cfg->maxgate;
+mmc_cu_host.cu:    if (cfg->seed > 0) {
+mmc_cu_host.cu:        srand(cfg->seed);
+mmc_cu_host.cu:                                   (mesh->prop + 1 + cfg->isextdet) * sizeof(Medium), 0,
+mmc_cu_host.cu:    if (cfg->detpos && cfg->detnum) {
+mmc_cu_host.cu:        if ((mesh->prop + 1 + cfg->isextdet) + cfg->detnum >= MAX_PROP) {
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpyToSymbol(gmed, cfg->detpos,
+mmc_cu_host.cu:                                       sizeof(float4)*cfg->detnum, (mesh->prop + 1 + cfg->isextdet) * sizeof(Medium),
+mmc_cu_host.cu:                           sizeof(float) * cfg->maxdetphoton * hostdetreclen));
+mmc_cu_host.cu:                           sizeof(float) * cfg->maxdetphoton * hostdetreclen,
+mmc_cu_host.cu:    if (cfg->srctype == MCX_SRC_PATTERN) {
+mmc_cu_host.cu:                               sizeof(float) * (int)(cfg->srcparam1.w * cfg->srcparam2.w)));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpy(gsrcpattern, cfg->srcpattern,
+mmc_cu_host.cu:                               sizeof(float) * (int)(cfg->srcparam1.w * cfg->srcparam2.w),
+mmc_cu_host.cu:    } else if (cfg->srctype == MCX_SRC_PATTERN3D) {
+mmc_cu_host.cu:                               sizeof(float) * (int)(cfg->srcparam1.x * cfg->srcparam1.y*
+mmc_cu_host.cu:                                       cfg->srcparam1.z)));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpy(gsrcpattern, cfg->srcpattern,
+mmc_cu_host.cu:                               sizeof(float) * (int)(cfg->srcparam1.x * cfg->srcparam1.y*
+mmc_cu_host.cu:                                       cfg->srcparam1.z),
+mmc_cu_host.cu:    if (cfg->issaveseed) {
+mmc_cu_host.cu:        Pphotonseed = (RandType*)calloc(cfg->maxdetphoton, (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMalloc((void**)&gphotonseed, cfg->maxdetphoton * (sizeof(RandType)*RAND_BUF_LEN)));
+mmc_cu_host.cu:    if (cfg->seed == SEED_FROM_FILE) {
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMalloc((void**)&greplayweight, sizeof(float)*cfg->nphoton));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpy(greplayweight, cfg->replayweight, sizeof(float)*cfg->nphoton, cudaMemcpyHostToDevice));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMalloc((void**)&greplaytime, sizeof(float)*cfg->nphoton));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpy(greplaytime, cfg->replaytime, sizeof(float)*cfg->nphoton, cudaMemcpyHostToDevice));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMalloc((void**)&greplayseed, (sizeof(RandType)*RAND_BUF_LEN)*cfg->nphoton));
+mmc_cu_host.cu:        CUDA_ASSERT(cudaMemcpy(greplayseed, cfg->photonseed, (sizeof(RandType)*RAND_BUF_LEN)*cfg->nphoton, cudaMemcpyHostToDevice));
+mmc_cu_host.cu:            cfg->flog, "- variant name: [%s] compiled by nvcc [%d.%d] with CUDA [%d]\n",
+mmc_cu_host.cu:            cfg->flog, "- code name: [Vanilla MCX] compiled by nvcc [%d.%d] with CUDA [%d]\n",
+mmc_cu_host.cu:        MMC_FPRINTF(cfg->flog, "- compiled with: [RNG] %s [Seed Length] %d\n",
+mmc_cu_host.cu:        fflush(cfg->flog);
+mmc_cu_host.cu:    MMC_FPRINTF(cfg->flog,
+mmc_cu_host.cu:                oddphotons, cfg->nphoton * cfg->workload[gpuid] / fullload,
+mmc_cu_host.cu:                cfg->respin);
+mmc_cu_host.cu:    for (t = cfg->tstart; t < cfg->tend; t += cfg->tstep * cfg->maxgate) {
+mmc_cu_host.cu:        twindow1 = t + cfg->tstep * cfg->maxgate;
+mmc_cu_host.cu:        MMC_FPRINTF(cfg->flog,
+mmc_cu_host.cu:        fflush(cfg->flog);
+mmc_cu_host.cu:        for (int iter = 0; iter < cfg->respin; iter++) {
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog, "simulation run#%2d ... \n", iter + 1);
+mmc_cu_host.cu:            fflush(cfg->flog);
+mmc_cu_host.cu:            fflush(cfg->flog);
+mmc_cu_host.cu:            if (cfg->issavedet) {
+mmc_cu_host.cu:                if ((cfg->debuglevel & MCX_DEBUG_PROGRESS)) {
+mmc_cu_host.cu:                    MMC_FPRINTF(cfg->flog, "\n");
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog,
+mmc_cu_host.cu:            fflush(cfg->flog);
+mmc_cu_host.cu:            if (cfg->runtime < tic1 - tic) {
+mmc_cu_host.cu:                cfg->runtime = tic1 - tic;
+mmc_cu_host.cu:            if (cfg->issavedet) {
+mmc_cu_host.cu:                CUDA_ASSERT(cudaMemcpy(Pdet, gdetphoton, sizeof(float) * cfg->maxdetphoton * hostdetreclen,
+mmc_cu_host.cu:                if (cfg->issaveseed) {
+mmc_cu_host.cu:                    CUDA_ASSERT(cudaMemcpy(Pphotonseed, gphotonseed, cfg->maxdetphoton * (sizeof(RandType)*RAND_BUF_LEN),
+mmc_cu_host.cu:                if (detected > cfg->maxdetphoton) {
+mmc_cu_host.cu:                    MMC_FPRINTF(cfg->flog, "WARNING: the detected photon (%d) \
+mmc_cu_host.cu:                                detected, cfg->maxdetphoton);
+mmc_cu_host.cu:                    MMC_FPRINTF(cfg->flog, "detected %d photons, total: %d\t", detected,
+mmc_cu_host.cu:                                cfg->detectedcount + detected);
+mmc_cu_host.cu:                cfg->his.detected += detected;
+mmc_cu_host.cu:                detected = MIN(detected, cfg->maxdetphoton);
+mmc_cu_host.cu:                if (cfg->exportdetected) {
+mmc_cu_host.cu:                        cfg->exportdetected = (float*)realloc(
+mmc_cu_host.cu:                            cfg->exportdetected, (cfg->detectedcount + detected) *
+mmc_cu_host.cu:                        memcpy(cfg->exportdetected + cfg->detectedcount * (hostdetreclen),
+mmc_cu_host.cu:                        if (cfg->issaveseed) {
+mmc_cu_host.cu:                            cfg->exportseed = (unsigned char*)realloc(cfg->exportseed, (cfg->detectedcount + detected) * (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cu_host.cu:                            memcpy(cfg->exportseed + cfg->detectedcount * sizeof(RandType)*RAND_BUF_LEN, Pphotonseed, detected * (sizeof(RandType)*RAND_BUF_LEN));
+mmc_cu_host.cu:                        cfg->detectedcount += detected;
+mmc_cu_host.cu:            if (cfg->issaveref) {
+mmc_cu_host.cu:            if (cfg->issave2pt) {
+mmc_cu_host.cu:                MMC_FPRINTF(cfg->flog, "transfer complete:        %d ms\n",
+mmc_cu_host.cu:                fflush(cfg->flog);
+mmc_cu_host.cu:                    field[(i >> cfg->nbuffer)] += rawfield[i] + rawfield[i + fieldlen];    //+rawfield[i+fieldlen];
+mmc_cu_host.cu:                        cfg->energyesc += energy[(i << 1)];
+mmc_cu_host.cu:                        cfg->energytot += energy[(i << 1) + 1];
+mmc_cu_host.cu:            if (cfg->respin > 1 && RAND_SEED_WORD_LEN > 1) {
+mmc_cu_host.cu:        fieldlen = (fieldlen >> cfg->nbuffer);
+mmc_cu_host.cu:        if (cfg->exportfield) {
+mmc_cu_host.cu:            if (cfg->basisorder == 0 || cfg->method == rtBLBadouelGrid) {
+mmc_cu_host.cu:                    cfg->exportfield[i] += field[i];
+mmc_cu_host.cu:                for (i = 0; i < cfg->maxgate; i++)
+mmc_cu_host.cu:                            cfg->exportfield[i * mesh->nn +
+mmc_cu_host.cu:        if (cfg->issaveref && mesh->dref) {
+mmc_cu_host.cu:        if (cfg->isnormalized) {
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog, "normalizing raw data ...\t");
+mmc_cu_host.cu:            fflush(cfg->flog);
+mmc_cu_host.cu:            cfg->energyabs = cfg->energytot - cfg->energyesc;
+mmc_cu_host.cu:            mesh_normalize(mesh, cfg, cfg->energyabs, cfg->energytot, 0);
+mmc_cu_host.cu:        if (cfg->issave2pt && cfg->parentid == mpStandalone) {
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog, "saving data to file ...\t");
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog, "saving data complete : %d ms\n\n",
+mmc_cu_host.cu:            fflush(cfg->flog);
+mmc_cu_host.cu:        if (cfg->issavedet && cfg->parentid == mpStandalone &&
+mmc_cu_host.cu:                cfg->exportdetected) {
+mmc_cu_host.cu:            cfg->his.unitinmm = cfg->unitinmm;
+mmc_cu_host.cu:            cfg->his.savedphoton = cfg->detectedcount;
+mmc_cu_host.cu:            cfg->his.detected = cfg->detectedcount;
+mmc_cu_host.cu:            mesh_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount,
+mmc_cu_host.cu:        if (cfg->issaveref) {
+mmc_cu_host.cu:            MMC_FPRINTF(cfg->flog, "saving surface diffuse reflectance ...");
+mmc_cu_host.cu:        MMC_FPRINTF(cfg->flog,
+mmc_cu_host.cu:                    cfg->nphoton, cfg->nphoton, reporter.raytet,
+mmc_cu_host.cu:                    (double)cfg->nphoton / toc);
+mmc_cu_host.cu:        MMC_FPRINTF(cfg->flog,
+mmc_cu_host.cu:                    cfg->energytot,
+mmc_cu_host.cu:                    (cfg->energytot - cfg->energyesc) / cfg->energytot * 100.f);
+mmc_cu_host.cu:        fflush(cfg->flog);
+mmc_core.cl:        if ((int)((r->photontimer + r->Lmove * (prop.n * R_C0) - gcfg->tstart)*GPU_PARAM(gcfg, Rtstep)) > GPU_PARAM(gcfg, maxgate) - 1) { /*exit time window*/
+mmc_core.cl:            r->Lmove = (gcfg->tend - r->photontimer) / (prop.n * R_C0) - 1e-4f;
+mmc_core.cl:            tshift = MIN( ((int)((r->photontimer - gcfg->tstart) * GPU_PARAM(gcfg, Rtstep))), GPU_PARAM(gcfg, maxgate) - 1 ) * GPU_PARAM(gcfg, framelen);
+mmc_core.cl:                                atomicadd(weight + r->oldidx + gcfg->crop0.w, oldval);
+mmc_core.cl:                            atomicadd(weight + r->oldidx + gcfg->crop0.w, oldval);
+mmc_core.cl:                S.xyz =  (r->p0 - gcfg->nmin) + (T.xyz * FL3(0.5f)); /*starting point*/
+mmc_core.cl:                S =  make_float4((r->p0.x - gcfg->nmin.x) + T.x * 0.5f, (r->p0.y - gcfg->nmin.y) + T.y * 0.5f, (r->p0.z - gcfg->nmin.z) + T.z * 0.5f, S.w); /*starting point*/
+mmc_core.cl:                    uint newidx = (idx.z * gcfg->crop0.y + idx.y * gcfg->crop0.x + idx.x) + tshift;
+mmc_core.cl:                                atomicadd(weight + r->oldidx + gcfg->crop0.w, oldval);
+mmc_core.cl:                                atomicadd(weight + r->oldidx + gcfg->crop0.w, oldval);
+mmc_core.cl:        r->p0.x = gcfg->srcpos.x + rx * gcfg->srcparam1.x + ry * gcfg->srcparam2.x;
+mmc_core.cl:        r->p0.y = gcfg->srcpos.y + rx * gcfg->srcparam1.y + ry * gcfg->srcparam2.y;
+mmc_core.cl:        r->p0.z = gcfg->srcpos.z + rx * gcfg->srcparam1.z + ry * gcfg->srcparam2.z;
+mmc_core.cl:            int xsize = (int)gcfg->srcparam1.w;
+mmc_core.cl:            int ysize = (int)gcfg->srcparam2.w;
+mmc_core.cl:            r->weight = srcpattern[MIN( (int)(ry * gcfg->srcparam2.w), (int)gcfg->srcparam2.w - 1 ) * (int)(gcfg->srcparam1.w) + MIN( (int)(rx * gcfg->srcparam1.w), (int)gcfg->srcparam1.w - 1 )];
+mmc_core.cl:            r->weight = (MCX_MATHFUN(cos)((floor(gcfg->srcparam1.w) * rx + floor(gcfg->srcparam2.w) * ry + gcfg->srcparam1.w - floor(gcfg->srcparam1.w)) * TWO_PI) * (1.f - gcfg->srcparam2.w + floor(gcfg->srcparam2.w)) + 1.f) * 0.5f;
+mmc_core.cl:        origin.x += (gcfg->srcparam1.x + gcfg->srcparam2.x) * 0.5f;
+mmc_core.cl:        origin.y += (gcfg->srcparam1.y + gcfg->srcparam2.y) * 0.5f;
+mmc_core.cl:        origin.z += (gcfg->srcparam1.z + gcfg->srcparam2.z) * 0.5f;
+mmc_core.cl:        float4 v2 = gcfg->srcparam1;
+mmc_core.cl:        v2.w *= MCX_MATHFUN(rsqrt)(gcfg->srcparam1.x * gcfg->srcparam1.x + gcfg->srcparam1.y * gcfg->srcparam1.y + gcfg->srcparam1.z * gcfg->srcparam1.z);
+mmc_core.cl:        v2.x = v2.w * (gcfg->srcdir.y * gcfg->srcparam1.z - gcfg->srcdir.z * gcfg->srcparam1.y);
+mmc_core.cl:        v2.y = v2.w * (gcfg->srcdir.z * gcfg->srcparam1.x - gcfg->srcdir.x * gcfg->srcparam1.z);
+mmc_core.cl:        v2.z = v2.w * (gcfg->srcdir.x * gcfg->srcparam1.y - gcfg->srcdir.y * gcfg->srcparam1.x);
+mmc_core.cl:        r->p0.x = gcfg->srcpos.x + rx * gcfg->srcparam1.x + ry * v2.x;
+mmc_core.cl:        r->p0.y = gcfg->srcpos.y + rx * gcfg->srcparam1.y + ry * v2.y;
+mmc_core.cl:        r->p0.z = gcfg->srcpos.z + rx * gcfg->srcparam1.z + ry * v2.z;
+mmc_core.cl:            r->weight = (MCX_MATHFUN(sin)((gcfg->srcparam2.x * rx + gcfg->srcparam2.z) * TWO_PI) * MCX_MATHFUN(sin)((gcfg->srcparam2.y * ry + gcfg->srcparam2.w) * TWO_PI) + 1.f) * 0.5f; //between 0 and 1
+mmc_core.cl:            r->weight = (MCX_MATHFUN(cos)((gcfg->srcparam2.x * rx + gcfg->srcparam2.y * ry + gcfg->srcparam2.z) * TWO_PI) * (1.f - gcfg->srcparam2.w) + 1.f) * 0.5f; //between 0 and 1
+mmc_core.cl:        origin.x += (gcfg->srcparam1.x + v2.x) * 0.5f;
+mmc_core.cl:        origin.y += (gcfg->srcparam1.y + v2.y) * 0.5f;
+mmc_core.cl:        origin.z += (gcfg->srcparam1.z + v2.z) * 0.5f;
+mmc_core.cl:            r0 = MCX_MATHFUN(sqrt)(rand_uniform01(ran)) * gcfg->srcparam1.x;
+mmc_core.cl:            if (fabs(GPU_PARAM(gcfg, focus)) < 1e-5f || fabs(gcfg->srcparam1.y) < 1e-5f) {
+mmc_core.cl:                r0 = MCX_MATHFUN(sqrt)(-MCX_MATHFUN(log)((rand_uniform01(ran)))) * gcfg->srcparam1.x;
+mmc_core.cl:                float z0 = gcfg->srcparam1.x * gcfg->srcparam1.x * M_PI / gcfg->srcparam1.y; //Rayleigh range
+mmc_core.cl:                r0 = MCX_MATHFUN(sqrt)(-MCX_MATHFUN(log)((rand_uniform01(ran)) * (1.f + (GPU_PARAM(gcfg, focus) * GPU_PARAM(gcfg, focus) / (z0 * z0))))) * gcfg->srcparam1.x;
+mmc_core.cl:        if (gcfg->srcdir.z > -1.f + EPS && gcfg->srcdir.z < 1.f - EPS) {
+mmc_core.cl:            float tmp0 = 1.f - gcfg->srcdir.z * gcfg->srcdir.z;
+mmc_core.cl:            r->p0.x = gcfg->srcpos.x + tmp1 * (gcfg->srcdir.x * gcfg->srcdir.z * cphi - gcfg->srcdir.y * sphi);
+mmc_core.cl:            r->p0.y = gcfg->srcpos.y + tmp1 * (gcfg->srcdir.y * gcfg->srcdir.z * cphi + gcfg->srcdir.x * sphi);
+mmc_core.cl:            r->p0.z = gcfg->srcpos.z - tmp1 * tmp0 * cphi;
+mmc_core.cl:                ang = (gcfg->srcparam1.y > 0) ? TWO_PI * rand_uniform01(ran) : acos(2.f * rand_uniform01(ran) - 1.f); //sine distribution
+mmc_core.cl:            } while (ang > gcfg->srcparam1.x);
+mmc_core.cl:        ang = MCX_MATHFUN(sqrt)(-2.f * MCX_MATHFUN(log)((rand_uniform01(ran)))) * (1.f - 2.f * rand_uniform01(ran)) * gcfg->srcparam1.x;
+mmc_core.cl:        r->p0.x += t * gcfg->srcparam1.x;
+mmc_core.cl:        r->p0.y += t * gcfg->srcparam1.y;
+mmc_core.cl:        r->p0.z += t * gcfg->srcparam1.z;
+mmc_core.cl:        origin.x += (gcfg->srcparam1.x) * 0.5f;
+mmc_core.cl:        origin.y += (gcfg->srcparam1.y) * 0.5f;
+mmc_core.cl:        origin.z += (gcfg->srcparam1.z) * 0.5f;
+mmc_core.cl:    ray r = {gcfg->srcpos, gcfg->srcdir, {MMC_UNDEFINED, 0.f, 0.f}, GPU_PARAM(gcfg, e0), 0, 0, 1.f, 0.f, 0.f, 0.f, ID_UNDEFINED, 0.f};
+mmc_core.cl:                    int tshift = MIN( ((int)((r.photontimer - gcfg->tstart) * GPU_PARAM(gcfg, Rtstep))), GPU_PARAM(gcfg, maxgate) - 1 ) * GPU_PARAM(gcfg, nf);
+mmc_core.cl:        if (GPU_PARAM(gcfg, minenergy) > 0.f && r.weight < GPU_PARAM(gcfg, minenergy) && (gcfg->tend - gcfg->tstart)*GPU_PARAM(gcfg, Rtstep) <= 1.f) { /*Russian Roulette*/
+mmc_cuda_query_gpu.cu:    if (cfg->gpuid && cfg->gpuid > (uint)deviceCount) {
+mmc_cuda_query_gpu.cu:        if (cfg->isgpuinfo == 3) {
+mmc_cuda_query_gpu.cu:        } else if (cfg->deviceid[dev] == '1') {
+mmc_cuda_query_gpu.cu:            cfg->deviceid[dev] = '\0';
+mmc_cuda_query_gpu.cu:            cfg->deviceid[activedev] = dev + 1;
+mmc_cuda_query_gpu.cu:        (*info)[dev].maxgate = cfg->maxgate;
+mmc_cuda_query_gpu.cu:            if (cfg->isgpuinfo) {
+mmc_cuda_query_gpu.cu:    if (cfg->isgpuinfo == 2 &&
+mmc_cuda_query_gpu.cu:            cfg->parentid == mpStandalone) { // list GPU info only
+mmc_cuda_query_gpu.cu:        cfg->deviceid[activedev] = '\0';
+mmc_mesh.c:    if (cfg->basisorder == 2) {
+mmc_mesh.c:    if (cfg->seed == SEED_FROM_FILE && cfg->seedfile[0]) {
+mmc_mesh.c:    sprintf(filename, format, cfg->meshtag);
+mmc_mesh.c:    if (cfg->rootpath[0]) {
+mmc_mesh.c:        sprintf(foutput, "%s%c%s", cfg->rootpath, pathsep, filename);
+mmc_mesh.c:    if (cfg->method == rtBLBadouelGrid) {
+mmc_mesh.c:    cfg->dim.x = (int)((mesh->nmax.x - mesh->nmin.x) / cfg->steps.x) + 1;
+mmc_mesh.c:    cfg->dim.y = (int)((mesh->nmax.y - mesh->nmin.y) / cfg->steps.y) + 1;
+mmc_mesh.c:    cfg->dim.z = (int)((mesh->nmax.z - mesh->nmin.z) / cfg->steps.z) + 1;
+mmc_mesh.c:    cfg->crop0.x = cfg->dim.x;
+mmc_mesh.c:    cfg->crop0.y = cfg->dim.y * cfg->dim.x;
+mmc_mesh.c:    cfg->crop0.z = cfg->dim.y * cfg->dim.x * cfg->dim.z;
+mmc_mesh.c:    mesh->med = (medium*)calloc(sizeof(medium), mesh->prop + 1 + cfg->isextdet);
+mmc_mesh.c:    mesh->atte = (float*)calloc(sizeof(float), mesh->prop + 1 + cfg->isextdet);
+mmc_mesh.c:    mesh->med[0].n = cfg->nout;
+mmc_mesh.c:    if (cfg->isextdet) {
+mmc_mesh.c:        /*mesh->atte[i]=expf(-cfg->minstep*mesh->med[i].mua);*/
+mmc_mesh.c:    if (cfg->method != rtBLBadouelGrid && cfg->unitinmm != 1.f) {
+mmc_mesh.c:            mesh->med[i].mus *= cfg->unitinmm;
+mmc_mesh.c:            mesh->med[i].mua *= cfg->unitinmm;
+mmc_mesh.c:    cfg->his.maxmedia = mesh->prop; /*skip media 0*/
+mmc_mesh.c:    datalen = (cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : ( (cfg->basisorder) ? mesh->nn : mesh->ne);
+mmc_mesh.c:    mesh->weight = (double*)calloc(sizeof(double) * datalen, cfg->maxgate * cfg->srcnum);
+mmc_mesh.c:            cfg->e0 = (cfg->e0 == 0) ? i + 1 : cfg->e0;
+mmc_mesh.c:            cfg->isextdet = 1;
+mmc_mesh.c:            cfg->detnum = 0; // when detecting wide-field detectors, suppress point detectors
+mmc_mesh.c:    FILE* fp = fopen(cfg->seedfile, "rb");
+mmc_mesh.c:    cfg->photonseed = malloc(his.savedphoton * his.seedbyte);
+mmc_mesh.c:    if (cfg->photonseed == NULL) {
+mmc_mesh.c:    if (fread(cfg->photonseed, his.seedbyte, his.savedphoton, fp) != his.savedphoton) {
+mmc_mesh.c:    cfg->seed = SEED_FROM_FILE;
+mmc_mesh.c:    cfg->nphoton = his.savedphoton;
+mmc_mesh.c:    if (cfg->outputtype == otJacobian || cfg->outputtype == otWL || cfg->outputtype == otWP || cfg->replaydet > 0) {
+mmc_mesh.c:        cfg->replayweight = (float*)malloc(his.savedphoton * sizeof(float));
+mmc_mesh.c:        cfg->replaytime = (float*)malloc(his.savedphoton * sizeof(float));
+mmc_mesh.c:        cfg->nphoton = 0;
+mmc_mesh.c:            if (cfg->replaydet == 0 || cfg->replaydet == (int)(ppath[i * his.colcount])) {
+mmc_mesh.c:                memcpy((char*)(cfg->photonseed) + cfg->nphoton * his.seedbyte, (char*)(cfg->photonseed) + i * his.seedbyte, his.seedbyte);
+mmc_mesh.c:                if ((cfg->detparam1.w * cfg->detparam2.w > 0) && (cfg->detpattern != NULL)) {
+mmc_mesh.c:                    cfg->replayweight[cfg->nphoton] = mesh_getdetweight(i, his.colcount, ppath, cfg);
+mmc_mesh.c:                    cfg->replayweight[cfg->nphoton] = ppath[(i + 1) * his.colcount - 1];
+mmc_mesh.c:                    cfg->replayweight[cfg->nphoton] *= expf(-mesh->med[j - 1].mua * ppath[i * his.colcount + j] * his.unitinmm);
+mmc_mesh.c:                cfg->replaytime[cfg->nphoton] = 0.f;
+mmc_mesh.c:                    cfg->replaytime[cfg->nphoton] += mesh->med[j - 1].n * ppath[i * his.colcount + j] * R_C0;
+mmc_mesh.c:                cfg->nphoton++;
+mmc_mesh.c:        cfg->photonseed = realloc(cfg->photonseed, cfg->nphoton * his.seedbyte);
+mmc_mesh.c:        cfg->replayweight = (float*)realloc(cfg->replayweight, cfg->nphoton * sizeof(float));
+mmc_mesh.c:        cfg->replaytime = (float*)realloc(cfg->replaytime, cfg->nphoton * sizeof(float));
+mmc_mesh.c:        cfg->minenergy = 0.f;
+mmc_mesh.c:    if (cfg->compute == cbOptiX) {
+mmc_mesh.c:    } else if ( (cfg->srctype == stPencil || cfg->srctype == stIsotropic || cfg->srctype == stCone || cfg->srctype == stArcSin)  && cfg->e0 > 0) {
+mmc_mesh.c:        int eid = cfg->e0 - 1;
+mmc_mesh.c:        float s = 0.f, *bary = &(cfg->bary0.x);
+mmc_mesh.c:            vec_diff(&nodes[ea], &(cfg->srcpos), &vecS);
+mmc_mesh.c:        if (cfg->debuglevel & dlWeight)
+mmc_mesh.c:            fprintf(cfg->flog, "initial bary-centric volumes [%e %e %e %e]\n",
+mmc_mesh.c:    if (cfg->issaveref) {
+mmc_mesh.c:        tracer->mesh->dref = (double*)calloc(sizeof(double) * tracer->mesh->nf * cfg->srcnum, cfg->maxgate);
+mmc_mesh.c:    if (cfg->ismomentum) {
+mmc_mesh.c:    int i, j, datalen = (cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : ( (cfg->basisorder) ? mesh->nn : mesh->ne);
+mmc_mesh.c:    if (cfg->rootpath[0]) {
+mmc_mesh.c:        sprintf(fweight, "%s%c%s%s.dat", cfg->rootpath, pathsep, cfg->session, (isref ? "_dref" : ""));
+mmc_mesh.c:        sprintf(fweight, "%s%s.dat", cfg->session, (isref ? "_dref" : ""));
+mmc_mesh.c:    if (cfg->outputformat >= ofBin && cfg->outputformat <= ofBJNifti) {
+mmc_mesh.c:        uint3 dim0 = cfg->dim;
+mmc_mesh.c:        if (cfg->method != rtBLBadouelGrid) {
+mmc_mesh.c:            cfg->dim.x = cfg->srcnum;
+mmc_mesh.c:            cfg->dim.y = cfg->maxgate;
+mmc_mesh.c:            cfg->dim.z = datalen;
+mmc_mesh.c:        mcx_savedata(mesh->weight, datalen * cfg->maxgate * cfg->srcnum, cfg, isref);
+mmc_mesh.c:        cfg->dim = dim0;
+mmc_mesh.c:    for (i = 0; i < cfg->maxgate; i++) {
+mmc_mesh.c:            if (1 == cfg->srcnum) {
+mmc_mesh.c:                for (k = 0; k < cfg->srcnum; k++) {
+mmc_mesh.c:                    shift = (i * datalen + j) * cfg->srcnum + k;
+mmc_mesh.c:    if (cfg->rootpath[0]) {
+mmc_mesh.c:        sprintf(fhistory, "%s%c%s.mch", cfg->rootpath, pathsep, cfg->session);
+mmc_mesh.c:        sprintf(fhistory, "%s.mch", cfg->session);
+mmc_mesh.c:    cfg->his.totalphoton = cfg->nphoton;
+mmc_mesh.c:    cfg->his.unitinmm = 1.f;
+mmc_mesh.c:    if (cfg->method != rtBLBadouelGrid) {
+mmc_mesh.c:        cfg->his.unitinmm = cfg->unitinmm;
+mmc_mesh.c:    cfg->his.detected = count;
+mmc_mesh.c:    cfg->his.savedphoton = count;
+mmc_mesh.c:    cfg->his.srcnum = cfg->srcnum;
+mmc_mesh.c:    cfg->his.detnum = cfg->detnum;
+mmc_mesh.c:    if (cfg->issaveseed && seeds != NULL) {
+mmc_mesh.c:        cfg->his.seedbyte = seedbyte;
+mmc_mesh.c:    cfg->his.colcount = (2 + (cfg->ismomentum > 0)) * cfg->his.maxmedia + (cfg->issaveexit > 0) * 6 + 2; /*column count=maxmedia+3*/
+mmc_mesh.c:    if (count > 0 && cfg->exportdetected == NULL) {
+mmc_mesh.c:        cfg->detectedcount = count;
+mmc_mesh.c:        cfg->exportdetected = (float*)malloc(cfg->his.colcount * cfg->detectedcount * sizeof(float));
+mmc_mesh.c:    if (cfg->exportdetected != ppath) {
+mmc_mesh.c:        memcpy(cfg->exportdetected, ppath, count * cfg->his.colcount * sizeof(float));
+mmc_mesh.c:    fwrite(&(cfg->his), sizeof(history), 1, fp);
+mmc_mesh.c:    fwrite(ppath, sizeof(float), count * cfg->his.colcount, fp);
+mmc_mesh.c:    if (cfg->issaveseed && seeds != NULL) {
+mmc_mesh.c:    // cfg->issaveexit is 2 for this mode
+mmc_mesh.c:    int colcount = (2 + (cfg->ismomentum > 0)) * cfg->his.maxmedia + 6 + 2;
+mmc_mesh.c:    float x0 = cfg->detpos[0].x;
+mmc_mesh.c:    float y0 = cfg->detpos[0].y;
+mmc_mesh.c:    float xrange = cfg->detparam1.x + cfg->detparam2.x;
+mmc_mesh.c:    float yrange = cfg->detparam1.y + cfg->detparam2.y;
+mmc_mesh.c:    int xsize = cfg->detparam1.w;
+mmc_mesh.c:    int ysize = cfg->detparam2.w;
+mmc_mesh.c:    float unitinmm = (cfg->method != rtBLBadouelGrid) ? cfg->his.unitinmm : 1.f;
+mmc_mesh.c:        for (j = 1; j <= cfg->his.maxmedia; j++) {
+mmc_mesh.c:            path += ppath[i * colcount + j + cfg->his.maxmedia] * mesh->med[j].n;
+mmc_mesh.c:            weight *= expf(-ppath[i * colcount + j + cfg->his.maxmedia] * mesh->med[j].mua * unitinmm);
+mmc_mesh.c:        ntg = (int) path * R_C0 / cfg->tstep;
+mmc_mesh.c:        if (ntg > cfg->maxgate - 1) {
+mmc_mesh.c:            ntg = cfg->maxgate - 1;
+mmc_mesh.c:    if (cfg->rootpath[0]) {
+mmc_mesh.c:        sprintf(fhistory, "%s%c%s.img", cfg->rootpath, pathsep, cfg->session);
+mmc_mesh.c:        sprintf(fhistory, "%s.img", cfg->session);
+mmc_mesh.c:    fwrite(detmap, sizeof(float), cfg->detparam1.w * cfg->detparam2.w * cfg->maxgate, fp);
+mmc_mesh.c:    float x0 = cfg->detpos[0].x;
+mmc_mesh.c:    float y0 = cfg->detpos[0].y;
+mmc_mesh.c:    float xrange = cfg->detparam1.x + cfg->detparam2.x;
+mmc_mesh.c:    float yrange = cfg->detparam1.y + cfg->detparam2.y;
+mmc_mesh.c:    int xsize = cfg->detparam1.w;
+mmc_mesh.c:    int ysize = cfg->detparam2.w;
+mmc_mesh.c:    return cfg->detpattern[yindex * xsize + xindex];
+mmc_mesh.c:    int datalen = (cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : ( (cfg->basisorder) ? mesh->nn : mesh->ne);
+mmc_mesh.c:    if (cfg->issaveref && mesh->dref) {
+mmc_mesh.c:        for (i = 0; i < cfg->maxgate; i++)
+mmc_mesh.c:    if (cfg->seed == SEED_FROM_FILE && (cfg->outputtype == otJacobian || cfg->outputtype == otWL || cfg->outputtype == otWP)) {
+mmc_mesh.c:        float normalizor = 1.f / (DELTA_MUA * cfg->nphoton);
+mmc_mesh.c:        if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_mesh.c:        for (i = 0; i < cfg->maxgate; i++)
+mmc_mesh.c:                mesh->weight[(i * datalen + j)*cfg->srcnum + pair] *= normalizor;
+mmc_mesh.c:    if (cfg->outputtype == otEnergy) {
+mmc_mesh.c:        for (i = 0; i < cfg->maxgate; i++)
+mmc_mesh.c:                mesh->weight[(i * datalen + j)*cfg->srcnum + pair] *= normalizor;
+mmc_mesh.c:    if (cfg->method == rtBLBadouelGrid) {
+mmc_mesh.c:        normalizor = 1.0 / (Etotal * cfg->unitinmm * cfg->unitinmm * cfg->unitinmm); /*scaling factor*/
+mmc_mesh.c:        if (cfg->basisorder) {
+mmc_mesh.c:            for (i = 0; i < cfg->maxgate; i++)
+mmc_mesh.c:                        mesh->weight[(i * datalen + j)*cfg->srcnum + pair] /= mesh->nvol[j];
+mmc_mesh.c:                for (j = 0; j < cfg->maxgate; j++)
+mmc_mesh.c:                        energyelem += mesh->weight[(j * mesh->nn + ee[k] - 1) * cfg->srcnum + pair];    /*1/4 factor is absorbed two lines below*/
+mmc_mesh.c:                for (j = 0; j < cfg->maxgate; j++) {
+mmc_mesh.c:                    energydeposit += mesh->weight[(j * datalen + i) * cfg->srcnum + pair];
+mmc_mesh.c:                for (j = 0; j < cfg->maxgate; j++) {
+mmc_mesh.c:                    mesh->weight[(j * datalen + i)*cfg->srcnum + pair] /= energyelem;
+mmc_mesh.c:    if (cfg->outputtype == otFlux) {
+mmc_mesh.c:        normalizor /= cfg->tstep;
+mmc_mesh.c:    for (i = 0; i < cfg->maxgate; i++)
+mmc_mesh.c:            mesh->weight[(i * datalen + j)*cfg->srcnum + pair] *= normalizor;
+Binary file built/mmc_optix_utils.ptx.o matches
+Binary file built/mmc_utils.o matches
+mmc_cl_utils.c:                if (cfg->isgpuinfo) {
+mmc_cl_utils.c:                    MMC_FPRINTF(cfg->flog, "Platform [%d] Name %s\n", i, pbuf);
+mmc_cl_utils.c:                        cuinfo.maxgate = cfg->maxgate;
+mmc_cl_utils.c:                        if (cfg->isgpuinfo) {
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, "============ %s device ID %d [%d of %d]: %s  ============\n", devname[j], cuid, k + 1, devnum, cuinfo.name);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Device %d of %d:\t\t%s\n", cuid + 1, devnum, cuinfo.name);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Compute units   :\t%d core(s)\n", (uint)cuinfo.sm);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Global memory   :\t%ld B\n", (unsigned long)cuinfo.globalmem);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Local memory    :\t%ld B\n", (unsigned long)cuinfo.sharedmem);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Constant memory :\t%ld B\n", (unsigned long)cuinfo.constmem);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Clock speed     :\t%d MHz\n", cuinfo.clock);
+mmc_cl_utils.c:                                MMC_FPRINTF(cfg->flog, " Compute Capacity:\t%d.%d\n", cuinfo.major, cuinfo.minor);
+mmc_cl_utils.c:                                MMC_FPRINTF(cfg->flog, " Stream Processor:\t%d\n", cuinfo.core);
+mmc_cl_utils.c:                                MMC_FPRINTF(cfg->flog, " GFXIP version:   \t%d.%d\n", cuinfo.major, cuinfo.minor);
+mmc_cl_utils.c:                                MMC_FPRINTF(cfg->flog, " Stream Processor:\t%d\n", cuinfo.core);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Vendor name    :\t%s\n", VendorList[cuinfo.vendor]);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Auto-thread    :\t%d\n", (uint)cuinfo.autothread);
+mmc_cl_utils.c:                            MMC_FPRINTF(cfg->flog, " Auto-block     :\t%d\n", (uint)cuinfo.autoblock);
+mmc_cl_utils.c:                            if (cfg->deviceid[cuid++] == '1') {
+mmc_cl_utils.c:                                    fflush(cfg->flog);
+mmc_cl_utils.c:    if (cfg->isgpuinfo == 2 && cfg->parentid == mpStandalone) {
+mmc_raytrace.c:    mus = (cfg->mcmethod == mmMCX) ? prop->mus : (prop->mua + prop->mus);
+mmc_raytrace.c:    if (cfg->debuglevel & dlTracing) {
+mmc_raytrace.c:        MMC_FPRINTF(cfg->flog, "%d \n", eid);
+mmc_raytrace.c:        //if(cfg->debuglevel&dlTracing) MMC_FPRINTF(cfg->flog,"testing face [%d]\n",i);
+mmc_raytrace.c:            //if(cfg->debuglevel&dlTracingExit) MMC_FPRINTF(cfg->flog,"ray exits face %d[%d] of %d\n",i,faceorder[i],eid);
+mmc_raytrace.c:            //if(cfg->debuglevel&dlTracingExit) MMC_FPRINTF(cfg->flog,"exit point %f %f %f\n",r->pout.x,r->pout.y,r->pout.z);
+mmc_raytrace.c:        if ((int)((r->photontimer + r->Lmove * rc - cfg->tstart)*visit->rtstep) >= (int)((cfg->tend - cfg->tstart)*visit->rtstep)) { /*exit time window*/
+mmc_raytrace.c:            r->Lmove = (cfg->tend - r->photontimer) / (prop->n * R_C0) - 1e-4f;
+mmc_raytrace.c:        if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otJacobian) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        } else if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWL) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWP) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        //if(cfg->debuglevel&dlWeight) MMC_FPRINTF(cfg->flog,"update weight to %f and path end %d \n",r->weight,r->isend);
+mmc_raytrace.c:        if (!cfg->basisorder) {
+mmc_raytrace.c:            if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_raytrace.c:                tshift = MIN( ((int)(cfg->replaytime[r->photonid] * visit->rtstep)), cfg->maxgate - 1 ) * tracer->mesh->ne;
+mmc_raytrace.c:                tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * tracer->mesh->ne;
+mmc_raytrace.c:            if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:                if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                    if (cfg->isatomic)
+mmc_raytrace.c:                    int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                    for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                        if (cfg->isatomic)
+mmc_raytrace.c:                            tracer->mesh->weight[(eid + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                            tracer->mesh->weight[(eid + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:            if (cfg->debuglevel & dlBary) MMC_FPRINTF(cfg->flog, "Y [%f %f %f %f]\n",
+mmc_raytrace.c:                    if (cfg->outputtype != otEnergy && cfg->outputtype != otWP) {
+mmc_raytrace.c:                    if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_raytrace.c:                        tshift = MIN( ((int)(cfg->replaytime[r->photonid] * visit->rtstep)), cfg->maxgate - 1 ) * tracer->mesh->nn;
+mmc_raytrace.c:                        tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * tracer->mesh->nn;
+mmc_raytrace.c:                    if (cfg->debuglevel & dlAccum) MMC_FPRINTF(cfg->flog, "A %f %f %f %e %d %e\n",
+mmc_raytrace.c:                    if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:                        if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                            if (cfg->isatomic)
+mmc_raytrace.c:                            int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                            for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                                if (cfg->isatomic)
+mmc_raytrace.c:                                        tracer->mesh->weight[(ee[i] - 1 + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx] * (baryp0[i] + baryout[i]);
+mmc_raytrace.c:                                        tracer->mesh->weight[(ee[i] - 1 + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx] * (baryp0[i] + baryout[i]);
+mmc_raytrace.c:    mus = (cfg->mcmethod == mmMCX) ? prop->mus : (prop->mua + prop->mus);
+mmc_raytrace.c:            if ((int)((r->photontimer + r->Lmove * rc - cfg->tstart)*visit->rtstep) >= (int)((cfg->tend - cfg->tstart)*visit->rtstep)) { /*exit time window*/
+mmc_raytrace.c:                r->Lmove = (cfg->tend - r->photontimer) / (prop->n * R_C0) - 1e-4f;
+mmc_raytrace.c:            if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:            if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otJacobian) {
+mmc_raytrace.c:                currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:            } else if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWL) {
+mmc_raytrace.c:                currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:            if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWP) {
+mmc_raytrace.c:                currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:                if (cfg->outputtype != otEnergy && cfg->outputtype != otWP) {
+mmc_raytrace.c:            if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_raytrace.c:                tshift = MIN( ((int)(cfg->replaytime[r->photonid] * visit->rtstep)), cfg->maxgate - 1 ) * (cfg->basisorder ? tracer->mesh->nn : tracer->mesh->ne);
+mmc_raytrace.c:                tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * (cfg->basisorder ? tracer->mesh->nn : tracer->mesh->ne);
+mmc_raytrace.c:            if (cfg->debuglevel & dlAccum) MMC_FPRINTF(cfg->flog, "A %f %f %f %e %d %e\n",
+mmc_raytrace.c:            if (cfg->debuglevel & dlBary) MMC_FPRINTF(cfg->flog, "Y [%f %f %f %f]\n",
+mmc_raytrace.c:            if (cfg->debuglevel & dlAccum) MMC_FPRINTF(cfg->flog, "A %f %f %f %e %d %e\n",
+mmc_raytrace.c:            //if(cfg->debuglevel&dlBary)
+mmc_raytrace.c:            //    MMC_FPRINTF(cfg->flog,"old bary0=[%f %f %f %f]\n",r->bary0.x,r->bary0.y,r->bary0.z,r->bary0.w);
+mmc_raytrace.c:                //if(cfg->debuglevel&dlBary) MMC_FPRINTF(cfg->flog,"[%d %d %d %d],[%d %d %d %d] - ",
+mmc_raytrace.c:                //if(cfg->debuglevel&dlBary) MMC_FPRINTF(cfg->flog,"[%f %f %f %f],[%f %f %f %f]\n",barypout[0],barypout[1],barypout[2],barypout[3],
+mmc_raytrace.c:            //if(cfg->debuglevel&dlBary)
+mmc_raytrace.c:            //    MMC_FPRINTF(cfg->flog,"new bary0=[%f %f %f %f]\n",r->bary0.x,r->bary0.y,r->bary0.z,r->bary0.w);
+mmc_raytrace.c:            if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:                if (!cfg->basisorder) {
+mmc_raytrace.c:                    if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                        if (cfg->isatomic)
+mmc_raytrace.c:                        int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                        for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                            if (cfg->isatomic)
+mmc_raytrace.c:                                tracer->mesh->weight[(eid + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                                tracer->mesh->weight[(eid + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                    if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                        if (cfg->isatomic)
+mmc_raytrace.c:                        int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                        for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                            if (cfg->isatomic)
+mmc_raytrace.c:                                    tracer->mesh->weight[(ee[j] - 1 + tshift)*cfg->srcnum + pidx] += barypout[j] * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                                    tracer->mesh->weight[(ee[j] - 1 + tshift)*cfg->srcnum + pidx] += barypout[j] * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:        mus = (cfg->mcmethod == mmMCX) ? prop->mus : (prop->mua + prop->mus);
+mmc_raytrace.c:        if ((int)((r->photontimer + r->Lmove * rc - cfg->tstart)*visit->rtstep) >= (int)((cfg->tend - cfg->tstart)*visit->rtstep)) { /*exit time window*/
+mmc_raytrace.c:            r->Lmove = (cfg->tend - r->photontimer) / (prop->n * R_C0) - 1e-4f;
+mmc_raytrace.c:        if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otJacobian) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        } else if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWL) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWP) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:            if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_raytrace.c:                tshift = MIN( ((int)(cfg->replaytime[r->photonid] * visit->rtstep)), cfg->maxgate - 1 ) * (cfg->basisorder ? tracer->mesh->nn : tracer->mesh->ne);
+mmc_raytrace.c:                tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * (cfg->basisorder ? tracer->mesh->nn : tracer->mesh->ne);
+mmc_raytrace.c:            if (cfg->debuglevel & dlAccum) MMC_FPRINTF(cfg->flog, "A %f %f %f %e %d %e\n",
+mmc_raytrace.c:            if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:                if (!cfg->basisorder) {
+mmc_raytrace.c:                    if (cfg->isatomic)
+mmc_raytrace.c:                    if (cfg->outputtype != otEnergy && cfg->outputtype != otWP) {
+mmc_raytrace.c:                    if (cfg->isatomic)
+mmc_raytrace.c:        if (cfg->implicit && r->inroi) {
+mmc_raytrace.c:        mus = (cfg->mcmethod == mmMCX) ? prop->mus : (prop->mua + prop->mus);
+mmc_raytrace.c:        if (cfg->implicit) {
+mmc_raytrace.c:            traceroi(r, tracer, cfg->implicit, 0);
+mmc_raytrace.c:        if ((int)((r->photontimer + r->Lmove * rc - cfg->tstart)*visit->rtstep) > cfg->maxgate - 1) { /*exit time window*/
+mmc_raytrace.c:            r->Lmove = (cfg->tend - r->photontimer) / (prop->n * R_C0) - 1e-4f;
+mmc_raytrace.c:        if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otJacobian) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        } else if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWL) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && cfg->outputtype == otWP) {
+mmc_raytrace.c:            currweight *= cfg->replayweight[r->photonid];
+mmc_raytrace.c:            int framelen = (cfg->basisorder ? tracer->mesh->nn : tracer->mesh->ne);
+mmc_raytrace.c:            if (cfg->method == rtBLBadouelGrid) {
+mmc_raytrace.c:                framelen = cfg->crop0.z;
+mmc_raytrace.c:            if (cfg->outputtype == otWL || cfg->outputtype == otWP) {
+mmc_raytrace.c:                tshift = MIN( ((int)(cfg->replaytime[r->photonid] * visit->rtstep)), cfg->maxgate - 1 ) * framelen;
+mmc_raytrace.c:                tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * framelen;
+mmc_raytrace.c:            if (cfg->debuglevel & dlAccum) MMC_FPRINTF(cfg->flog, "A %f %f %f %e %d %e\n",
+mmc_raytrace.c:                if (cfg->outputtype != otEnergy && cfg->outputtype != otWP) {
+mmc_raytrace.c:            if (cfg->mcmethod == mmMCX) {
+mmc_raytrace.c:                if (!cfg->basisorder) {
+mmc_raytrace.c:                    if (cfg->method == rtBLBadouel) {
+mmc_raytrace.c:                            if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                                if (cfg->isatomic)
+mmc_raytrace.c:                                int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                                for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                                    if (cfg->isatomic)
+mmc_raytrace.c:                                        tracer->mesh->weight[r->oldidx * cfg->srcnum + pidx] += r->oldweight * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                                        tracer->mesh->weight[r->oldidx * cfg->srcnum + pidx] += r->oldweight * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                            if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                                if (cfg->isatomic)
+mmc_raytrace.c:                                int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                                for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                                    if (cfg->isatomic)
+mmc_raytrace.c:                                        tracer->mesh->weight[newidx * cfg->srcnum + pidx] += r->oldweight * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                                        tracer->mesh->weight[newidx * cfg->srcnum + pidx] += r->oldweight * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                        int i, seg = (int)(r->Lmove / cfg->steps.x) + 1;
+mmc_raytrace.c:                        dstep = 1.f / cfg->steps.x;
+mmc_raytrace.c:                            unsigned int newidx = idx.z * cfg->crop0.y + idx.y * cfg->crop0.x + idx.x + tshift;
+mmc_raytrace.c:                                if (cfg->isatomic)
+mmc_raytrace.c:                                if (cfg->isatomic)
+mmc_raytrace.c:                    if (cfg->srctype != stPattern) {
+mmc_raytrace.c:                        if (cfg->isatomic)
+mmc_raytrace.c:                        int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w; // total number of pixels in each pattern
+mmc_raytrace.c:                        for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                            if (cfg->isatomic)
+mmc_raytrace.c:                                    tracer->mesh->weight[(ee[out[faceidx][i]] - 1 + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:                                    tracer->mesh->weight[(ee[out[faceidx][i]] - 1 + tshift)*cfg->srcnum + pidx] += ww * cfg->srcpattern[pidx * psize + r->posidx];
+mmc_raytrace.c:    ray r = {cfg->srcpos, {cfg->srcdir.x, cfg->srcdir.y, cfg->srcdir.z}, {MMC_UNDEFINED, 0.f, 0.f}, cfg->bary0, cfg->e0, cfg->dim.y - 1, 0, 0, 1.f, 0.f, 0.f, 0.f, 0.f, 0., 0, NULL, NULL, cfg->srcdir.w, 0, 0xFFFFFFFF, 0.0, NULL, 0, 0, 0, 0};
+mmc_raytrace.c:    if (cfg->issavedet && cfg->issaveseed) {
+mmc_raytrace.c:    if (cfg->method >= rtPlucker && cfg->method <= rtBLBadouelGrid) {
+mmc_raytrace.c:        tracercore = engines[(int)(cfg->method)];
+mmc_raytrace.c:    if (cfg->srctype != stPattern) {
+mmc_raytrace.c:        if (cfg->seed == SEED_FROM_FILE && (cfg->outputtype == otWL || cfg->outputtype == otWP)) {
+mmc_raytrace.c:            kahany = cfg->replayweight[r.photonid] - visit->kahanc0[0];    /* when replay mode, accumulate detected photon weight */
+mmc_raytrace.c:        int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w;
+mmc_raytrace.c:            for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                if (cfg->seed == SEED_FROM_FILE && (cfg->outputtype == otWL || cfg->outputtype == otWP)) {
+mmc_raytrace.c:                    kahany = cfg->replayweight[r.photonid] - visit->kahanc0[pidx];    /* when replay mode, accumulate detected photon weight */
+mmc_raytrace.c:                    kahany = r.weight * cfg->srcpattern[pidx * psize + r.posidx] - visit->kahanc0[pidx];
+mmc_raytrace.c:    if (cfg->implicit) {
+mmc_raytrace.c:        updateroi(cfg->implicit, &r, tracer->mesh);
+mmc_raytrace.c:        traceroi(&r, tracer, cfg->implicit, 1);
+mmc_raytrace.c:        if (cfg->implicit) {
+mmc_raytrace.c:            updateroi(cfg->implicit, &r, tracer->mesh);
+mmc_raytrace.c:        if (cfg->issavedet && r.Lmove > 0.f && mesh->type[r.eid - 1] > 0 && r.faceid >= 0) {
+mmc_raytrace.c:        if (cfg->implicit && cfg->isreflect && r.roitype && r.roiidx >= 0 && (mesh->med[cfg->his.maxmedia].n != mesh->med[mesh->type[r.eid - 1]].n)) {
+mmc_raytrace.c:        } else if (cfg->implicit && r.roitype) {
+mmc_raytrace.c:            if (cfg->implicit) {
+mmc_raytrace.c:                if (cfg->isreflect && (r.eid <= 0 || mesh->med[mesh->type[r.eid - 1]].n != mesh->med[mesh->type[oldeid - 1]].n )) {
+mmc_raytrace.c:                    if (! (!r.inroi && r.eid <= 0 && ((mesh->med[mesh->type[oldeid - 1]].n == cfg->nout && cfg->isreflect != (int)bcMirror) || cfg->isreflect == (int)bcAbsorbExterior) ) ) {
+mmc_raytrace.c:                if (cfg->isreflect && (r.eid <= 0 || mesh->med[mesh->type[r.eid - 1]].n != mesh->med[mesh->type[oldeid - 1]].n )) {
+mmc_raytrace.c:                    if (! (r.eid <= 0 && ((mesh->med[mesh->type[oldeid - 1]].n == cfg->nout && cfg->isreflect != (int)bcMirror) || cfg->isreflect == (int)bcAbsorbExterior) ) ) {
+mmc_raytrace.c:                if (cfg->debuglevel & dlExit)
+mmc_raytrace.c:                    MMC_FPRINTF(cfg->flog, "e %f %f %f %f %f %f %f %d\n", r.p0.x, r.p0.y, r.p0.z,
+mmc_raytrace.c:                if (!cfg->voidtime) {
+mmc_raytrace.c:                if (cfg->debuglevel & dlExit)
+mmc_raytrace.c:                    MMC_FPRINTF(cfg->flog, "x %f %f %f %f %f %f %f %d\n", r.p0.x, r.p0.y, r.p0.z,
+mmc_raytrace.c:                if (!cfg->isextdet) {
+mmc_raytrace.c:            //          if(r.eid!=ID_UNDEFINED && mesh->med[mesh->type[oldeid-1]].n == cfg->nout ) break;
+mmc_raytrace.c:            if (r.pout.x != MMC_UNDEFINED && (cfg->debuglevel & dlMove)) {
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "P %f %f %f %d %zu %e\n", r.pout.x, r.pout.y, r.pout.z, r.eid, id, r.slen);
+mmc_raytrace.c:            if (cfg->implicit) {
+mmc_raytrace.c:                updateroi(cfg->implicit, &r, tracer->mesh);
+mmc_raytrace.c:            if (cfg->issavedet && r.Lmove > 0.f && mesh->type[r.eid - 1] > 0) {
+mmc_raytrace.c:                if (cfg->issavedet && r.Lmove > 0.f && mesh->type[r.eid - 1] > 0) {
+mmc_raytrace.c:            if (r.eid != ID_UNDEFINED && (cfg->debuglevel & dlMove)) {
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "B %f %f %f %d %zu %e\n", r.p0.x, r.p0.y, r.p0.z, r.eid, id, r.slen);
+mmc_raytrace.c:                if (cfg->debuglevel & dlExit)
+mmc_raytrace.c:                    MMC_FPRINTF(cfg->flog, "E %f %f %f %f %f %f %f %d\n", r.p0.x, r.p0.y, r.p0.z,
+mmc_raytrace.c:                if (cfg->issavedet && cfg->issaveexit) {                                   /*when issaveexit is set to 1*/
+mmc_raytrace.c:                if (cfg->issaveref && r.eid < 0 && mesh->dref) {
+mmc_raytrace.c:                    int tshift = MIN( ((int)((r.photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * mesh->nf;
+mmc_raytrace.c:            } else if (r.faceid == -2 && (cfg->debuglevel & dlMove)) {
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "T %f %f %f %d %zu %e\n", r.p0.x, r.p0.y, r.p0.z, r.eid, id, r.slen);
+mmc_raytrace.c:            } else if (r.eid && r.faceid != -2  && cfg->debuglevel & dlEdge) {
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "X %f %f %f %d %zu %e\n", r.p0.x, r.p0.y, r.p0.z, r.eid, id, r.slen);
+mmc_raytrace.c:            if (cfg->issavedet && r.eid <= 0) {
+mmc_raytrace.c:                if (cfg->detnum == 0 && cfg->isextdet && mesh->type[oldeid - 1] == mesh->prop + 1) {
+mmc_raytrace.c:                    for (i = 0; i < cfg->detnum; i++) {
+mmc_raytrace.c:                        if ((cfg->detpos[i].x - r.p0.x) * (cfg->detpos[i].x - r.p0.x) +
+mmc_raytrace.c:                                (cfg->detpos[i].y - r.p0.y) * (cfg->detpos[i].y - r.p0.y) +
+mmc_raytrace.c:                                (cfg->detpos[i].z - r.p0.z) * (cfg->detpos[i].z - r.p0.z) < cfg->detpos[i].w * cfg->detpos[i].w) {
+mmc_raytrace.c:        if (cfg->debuglevel & dlMove) {
+mmc_raytrace.c:            MMC_FPRINTF(cfg->flog, "M %f %f %f %d %zu %e\n", r.p0.x, r.p0.y, r.p0.z, r.eid, id, r.slen);
+mmc_raytrace.c:        if (cfg->minenergy > 0.f && r.weight < cfg->minenergy && (cfg->tend - cfg->tstart)*visit->rtstep <= 1.f) { /*Russian Roulette*/
+mmc_raytrace.c:            if (rand_do_roulette(ran)*cfg->roulettesize <= 1.f) {
+mmc_raytrace.c:                r.weight *= cfg->roulettesize;
+mmc_raytrace.c:                if (cfg->debuglevel & dlWeight) {
+mmc_raytrace.c:                    MMC_FPRINTF(cfg->flog, "Russian Roulette bumps r.weight to %f\n", r.weight);
+mmc_raytrace.c:        if (cfg->implicit && cfg->isreflect && r.roitype && r.roiidx >= 0 && (mesh->med[cfg->his.maxmedia].n != mesh->med[mesh->type[r.eid - 1]].n)) {
+mmc_raytrace.c:        } else if (cfg->implicit && r.roitype) {
+mmc_raytrace.c:        if (cfg->mcmethod != mmMCX) {
+mmc_raytrace.c:        if (cfg->ismomentum && mesh->type[r.eid - 1] > 0) {              /*when ismomentum is set to 1*/
+mmc_raytrace.c:    if (cfg->issavedet && exitdet > 0) {
+mmc_raytrace.c:            if (cfg->issaveseed) {
+mmc_raytrace.c:        if (cfg->issaveseed) {
+mmc_raytrace.c:    if (cfg->srctype != stPattern) {
+mmc_raytrace.c:        int psize = (int)cfg->srcparam1.w * (int)cfg->srcparam2.w;
+mmc_raytrace.c:            for (pidx = 0; pidx < cfg->srcnum; pidx++) {
+mmc_raytrace.c:                kahany = r.Eabsorb * cfg->srcpattern[pidx * psize + r.posidx] - visit->kahanc1[pidx];
+mmc_raytrace.c:        n2 = tracer->mesh->med[cfg->his.maxmedia].n;
+mmc_raytrace.c:        n1 = tracer->mesh->med[cfg->his.maxmedia].n;
+mmc_raytrace.c:            //if(cfg->debuglevel&dlReflect) MMC_FPRINTF(cfg->flog,"R %f %f %f %d %d %f\n",c0->x,c0->y,c0->z,*eid,*oldeid,Rtotal);
+mmc_raytrace.c:        } else if (cfg->isspecular == 2 && *eid == 0) {
+mmc_raytrace.c:    if (cfg->method == rtPlucker) { //Plucker ray-tracing
+mmc_raytrace.c:    } else if (cfg->method < rtBLBadouel) {
+mmc_raytrace.c:    } else if (cfg->method == rtBLBadouel || cfg->method == rtBLBadouelGrid) {
+mmc_raytrace.c:    if (cfg->implicit && inroi != 0) {
+mmc_raytrace.c:        n1 = tracer->mesh->med[cfg->his.maxmedia].n;
+mmc_raytrace.c:        n1 = (*oldeid != *eid) ? tracer->mesh->med[tracer->mesh->type[*oldeid - 1]].n : cfg->nout;
+mmc_raytrace.c:        n2 = (*eid > 0) ? tracer->mesh->med[tracer->mesh->type[*eid - 1]].n : cfg->nout;
+mmc_raytrace.c:    if (tmp2 > 0.f && !(*eid <= 0 && cfg->isreflect == bcMirror)) { /*if no total internal reflection*/
+mmc_raytrace.c:            //if(cfg->debuglevel&dlReflect) MMC_FPRINTF(cfg->flog,"R %f %f %f %d %d %f\n",c0->x,c0->y,c0->z,*eid,*oldeid,Rtotal);
+mmc_raytrace.c:        } else if (cfg->isspecular == 2 && *eid == 0) {
+mmc_raytrace.c:            //if(cfg->debuglevel&dlReflect) MMC_FPRINTF(cfg->flog,"Z %f %f %f %d %d %f\n",c0->x,c0->y,c0->z,*eid,*oldeid,1.f-Rtotal);
+mmc_raytrace.c:        //if(cfg->debuglevel&dlReflect) MMC_FPRINTF(cfg->flog,"V %f %f %f %d %d %f\n",c0->x,c0->y,c0->z,*eid,*oldeid,1.f);
+mmc_raytrace.c:    if (cfg->srctype == stPencil) { // pencil beam, use the old workflow, except when eid is not given
+mmc_raytrace.c:    } else if (cfg->srctype == stPlanar || cfg->srctype == stPattern || cfg->srctype == stFourier) {
+mmc_raytrace.c:        r->p0.x = cfg->srcpos.x + rx * cfg->srcparam1.x + ry * cfg->srcparam2.x;
+mmc_raytrace.c:        r->p0.y = cfg->srcpos.y + rx * cfg->srcparam1.y + ry * cfg->srcparam2.y;
+mmc_raytrace.c:        r->p0.z = cfg->srcpos.z + rx * cfg->srcparam1.z + ry * cfg->srcparam2.z;
+mmc_raytrace.c:        if (cfg->srctype == stPattern) {
+mmc_raytrace.c:            int xsize = (int)cfg->srcparam1.w;
+mmc_raytrace.c:            int ysize = (int)cfg->srcparam2.w;
+mmc_raytrace.c:            if (cfg->seed == SEED_FROM_FILE && (cfg->outputtype == otWL || cfg->outputtype == otWP)) { // replay mode currently doesn't support multiple source patterns
+mmc_raytrace.c:                r->weight = cfg->srcpattern[MIN( (int)(ry * cfg->srcparam2.w), (int)cfg->srcparam2.w - 1 ) * (int)(cfg->srcparam1.w) + MIN( (int)(rx * cfg->srcparam1.w), (int)cfg->srcparam1.w - 1 )];
+mmc_raytrace.c:                cfg->replayweight[r->photonid] *= r->weight;
+mmc_raytrace.c:        } else if (cfg->srctype == stFourier) {
+mmc_raytrace.c:            r->weight = (cosf((floorf(cfg->srcparam1.w) * rx + floorf(cfg->srcparam2.w) * ry + cfg->srcparam1.w - floorf(cfg->srcparam1.w)) * TWO_PI) * (1.f - cfg->srcparam2.w + floorf(cfg->srcparam2.w)) + 1.f) * 0.5f;
+mmc_raytrace.c:        origin.x += (cfg->srcparam1.x + cfg->srcparam2.x) * 0.5f;
+mmc_raytrace.c:        origin.y += (cfg->srcparam1.y + cfg->srcparam2.y) * 0.5f;
+mmc_raytrace.c:        origin.z += (cfg->srcparam1.z + cfg->srcparam2.z) * 0.5f;
+mmc_raytrace.c:    } else if (cfg->srctype == stFourierX || cfg->srctype == stFourier2D) {
+mmc_raytrace.c:        float4 v2 = cfg->srcparam1;
+mmc_raytrace.c:        v2.w *= 1.f / (sqrtf(cfg->srcparam1.x * cfg->srcparam1.x + cfg->srcparam1.y * cfg->srcparam1.y + cfg->srcparam1.z * cfg->srcparam1.z));
+mmc_raytrace.c:        v2.x = v2.w * (cfg->srcdir.y * cfg->srcparam1.z - cfg->srcdir.z * cfg->srcparam1.y);
+mmc_raytrace.c:        v2.y = v2.w * (cfg->srcdir.z * cfg->srcparam1.x - cfg->srcdir.x * cfg->srcparam1.z);
+mmc_raytrace.c:        v2.z = v2.w * (cfg->srcdir.x * cfg->srcparam1.y - cfg->srcdir.y * cfg->srcparam1.x);
+mmc_raytrace.c:        r->p0.x = cfg->srcpos.x + rx * cfg->srcparam1.x + ry * v2.x;
+mmc_raytrace.c:        r->p0.y = cfg->srcpos.y + rx * cfg->srcparam1.y + ry * v2.y;
+mmc_raytrace.c:        r->p0.z = cfg->srcpos.z + rx * cfg->srcparam1.z + ry * v2.z;
+mmc_raytrace.c:        if (cfg->srctype == stFourier2D) {
+mmc_raytrace.c:            r->weight = (sinf((cfg->srcparam2.x * rx + cfg->srcparam2.z) * TWO_PI) * sinf((cfg->srcparam2.y * ry + cfg->srcparam2.w) * TWO_PI) + 1.f) * 0.5f;    //between 0 and 1
+mmc_raytrace.c:            r->weight = (cosf((cfg->srcparam2.x * rx + cfg->srcparam2.y * ry + cfg->srcparam2.z) * TWO_PI) * (1.f - cfg->srcparam2.w) + 1.f) * 0.5f;    //between 0 and 1
+mmc_raytrace.c:        origin.x += (cfg->srcparam1.x + v2.x) * 0.5f;
+mmc_raytrace.c:        origin.y += (cfg->srcparam1.y + v2.y) * 0.5f;
+mmc_raytrace.c:        origin.z += (cfg->srcparam1.z + v2.z) * 0.5f;
+mmc_raytrace.c:    } else if (cfg->srctype == stDisk || cfg->srctype == stGaussian) { // uniform disk and Gaussian beam
+mmc_raytrace.c:        if (cfg->srctype == stDisk) {
+mmc_raytrace.c:            r0 = sqrtf(rand_uniform01(ran)) * cfg->srcparam1.x;
+mmc_raytrace.c:        } else if (fabs(r->focus) < 1e-5f || fabs(cfg->srcparam1.y) < 1e-5f) {
+mmc_raytrace.c:            r0 = sqrtf(-log(rand_uniform01(ran))) * cfg->srcparam1.x;
+mmc_raytrace.c:            float z0 = cfg->srcparam1.x * cfg->srcparam1.x * M_PI / cfg->srcparam1.y; //Rayleigh range
+mmc_raytrace.c:            r0 = sqrtf(-log(rand_uniform01(ran)) * (1.f + (r->focus * r->focus / (z0 * z0)))) * cfg->srcparam1.x;
+mmc_raytrace.c:        if (cfg->srcdir.z > -1.f + EPS && cfg->srcdir.z < 1.f - EPS) {
+mmc_raytrace.c:            float tmp0 = 1.f - cfg->srcdir.z * cfg->srcdir.z;
+mmc_raytrace.c:            r->p0.x = cfg->srcpos.x + tmp1 * (cfg->srcdir.x * cfg->srcdir.z * cphi - cfg->srcdir.y * sphi);
+mmc_raytrace.c:            r->p0.y = cfg->srcpos.y + tmp1 * (cfg->srcdir.y * cfg->srcdir.z * cphi + cfg->srcdir.x * sphi);
+mmc_raytrace.c:            r->p0.z = cfg->srcpos.z - tmp1 * tmp0 * cphi;
+mmc_raytrace.c:    } else if (cfg->srctype == stCone || cfg->srctype == stIsotropic || cfg->srctype == stArcSin) {
+mmc_raytrace.c:        if (cfg->srctype == stCone) { // a solid-angle section of a uniform sphere
+mmc_raytrace.c:                ang = (cfg->srcparam1.y > 0) ? TWO_PI * rand_uniform01(ran) : acosf(2.f * rand_uniform01(ran) - 1.f); //sine distribution
+mmc_raytrace.c:            } while (ang > cfg->srcparam1.x);
+mmc_raytrace.c:            if (cfg->srctype == stIsotropic) { // uniform sphere
+mmc_raytrace.c:    } else if (cfg->srctype == stZGaussian) {
+mmc_raytrace.c:        ang = sqrtf(-2.f * log(rand_uniform01(ran))) * (1.f - 2.f * rand_uniform01(ran0)) * cfg->srcparam1.x;
+mmc_raytrace.c:    } else if (cfg->srctype == stLine || cfg->srctype == stSlit) {
+mmc_raytrace.c:        r->p0.x += t * cfg->srcparam1.x;
+mmc_raytrace.c:        r->p0.y += t * cfg->srcparam1.y;
+mmc_raytrace.c:        r->p0.z += t * cfg->srcparam1.z;
+mmc_raytrace.c:        if (cfg->srctype == stLine) {
+mmc_raytrace.c:        origin.x += (cfg->srcparam1.x) * 0.5f;
+mmc_raytrace.c:        origin.y += (cfg->srcparam1.y) * 0.5f;
+mmc_raytrace.c:        origin.z += (cfg->srcparam1.z) * 0.5f;
+mmc_raytrace.c:        canfocus = (cfg->srctype == stSlit);
+mmc_raytrace.c:            MMC_FPRINTF(cfg->flog, "all tetrahedra (%d) labeled with -1 do not enclose the source!\n", mesh->srcelemlen);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "elem %d %d [%f %f %f] \n", mesh->srcelem[0], elems[0], mesh->node[elems[0] - 1].x, mesh->node[elems[0] - 1].y, mesh->node[elems[0] - 1].z);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "elem %d %d [%f %f %f] \n", mesh->srcelem[0], elems[1], mesh->node[elems[1] - 1].x, mesh->node[elems[1] - 1].y, mesh->node[elems[1] - 1].z);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "elem %d %d [%f %f %f] \n", mesh->srcelem[0], elems[2], mesh->node[elems[2] - 1].x, mesh->node[elems[2] - 1].y, mesh->node[elems[2] - 1].z);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "elem %d %d [%f %f %f] \n", mesh->srcelem[0], elems[3], mesh->node[elems[3] - 1].x, mesh->node[elems[3] - 1].y, mesh->node[elems[3] - 1].z);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "source position [%e %e %e] \n", r->p0.x, r->p0.y, r->p0.z);
+mmc_raytrace.c:                MMC_FPRINTF(cfg->flog, "bary centric volume [%e %e %e %e] \n", bary[0], bary[1], bary[2], bary[3]);
+mmc_raytrace.c:    int i, tshift, datalen = (cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : ( (cfg->basisorder) ? mesh->nn : mesh->ne);;
+mmc_raytrace.c:    tshift = MIN( ((int)((r->photontimer - cfg->tstart) * visit->rtstep)), cfg->maxgate - 1 ) * datalen;
+mmc_raytrace.c:    if (cfg->method == rtBLBadouelGrid) {
+mmc_raytrace.c:        if (!cfg->basisorder) {
+mmc_raytrace.c:            if (cfg->isatomic)
+mmc_raytrace.c:            if (cfg->isatomic)
+mmc_raytrace.c:    visit->launchweight = (double*)calloc(cfg->srcnum, sizeof(double));
+mmc_raytrace.c:    visit->absorbweight = (double*)calloc(cfg->srcnum, sizeof(double));
+mmc_raytrace.c:    visit->kahanc0 = (double*)calloc(cfg->srcnum, sizeof(double));
+mmc_raytrace.c:    visit->kahanc1 = (double*)calloc(cfg->srcnum, sizeof(double));
+mmc_utils.c:    cfg->medianum = 0;
+mmc_utils.c:    cfg->srcnum = 1;
+mmc_utils.c:    cfg->detnum = 0;
+mmc_utils.c:    cfg->e0 = 0;
+mmc_utils.c:    cfg->dim.x = 0;
+mmc_utils.c:    cfg->dim.y = 0;
+mmc_utils.c:    cfg->dim.z = 0;
+mmc_utils.c:    cfg->steps.x = 1.f;
+mmc_utils.c:    cfg->steps.y = 1.f;
+mmc_utils.c:    cfg->steps.z = 1.f;
+mmc_utils.c:    cfg->nblocksize = 64;
+mmc_utils.c:    cfg->nphoton = 0;
+mmc_utils.c:    cfg->nthread = 1024 * 8;
+mmc_utils.c:    cfg->seed = 0x623F9A9E;
+mmc_utils.c:    cfg->isrowmajor = 0;    /* not needed */
+mmc_utils.c:    cfg->maxgate = 1;
+mmc_utils.c:    cfg->implicit = 0;
+mmc_utils.c:    cfg->isreflect = 1;
+mmc_utils.c:    cfg->isref3 = 1;
+mmc_utils.c:    cfg->isnormalized = 1;
+mmc_utils.c:    cfg->issavedet = 0;
+mmc_utils.c:    cfg->respin = 1;
+mmc_utils.c:    cfg->issave2pt = 1;
+mmc_utils.c:    cfg->isgpuinfo = 0;
+mmc_utils.c:    cfg->basisorder = 1;
+mmc_utils.c:    cfg->compute = cbOpenCL;
+mmc_utils.c:    cfg->isdumpjson = 0;
+mmc_utils.c:    cfg->zipid = zmZlib;
+mmc_utils.c:    memset(cfg->jsonfile, 0, MAX_PATH_LENGTH);
+mmc_utils.c:    cfg->shapedata = NULL;
+mmc_utils.c:    cfg->method = rtBLBadouelGrid;
+mmc_utils.c:    cfg->method = rtPlucker;
+mmc_utils.c:    cfg->method = rtHavel;
+mmc_utils.c:    cfg->prop = NULL;
+mmc_utils.c:    cfg->detpos = NULL;
+mmc_utils.c:    cfg->vol = NULL;
+mmc_utils.c:    cfg->session[0] = '\0';
+mmc_utils.c:    cfg->meshtag[0] = '\0';
+mmc_utils.c:    cfg->minenergy = 1e-6f;
+mmc_utils.c:    cfg->flog = stdout;
+mmc_utils.c:    cfg->sradius = 0.f;
+mmc_utils.c:    cfg->rootpath[0] = '\0';
+mmc_utils.c:    cfg->seedfile[0] = '\0';
+mmc_utils.c:    cfg->debuglevel = 0;
+mmc_utils.c:    cfg->minstep = 1.f;
+mmc_utils.c:    cfg->roulettesize = 10.f;
+mmc_utils.c:    cfg->nout = 1.f;
+mmc_utils.c:    cfg->unitinmm = 1.f;
+mmc_utils.c:    cfg->srctype = 0;
+mmc_utils.c:    cfg->isspecular = 0;
+mmc_utils.c:    cfg->issaveref = 0;
+mmc_utils.c:    cfg->outputtype = otFlux;
+mmc_utils.c:    cfg->outputformat = ofASCII;
+mmc_utils.c:    cfg->ismomentum = 0;
+mmc_utils.c:    cfg->issaveseed = 0;
+mmc_utils.c:    cfg->issaveexit = 0;
+mmc_utils.c:    cfg->photonseed = NULL;
+mmc_utils.c:    cfg->replaydet = 0;
+mmc_utils.c:    cfg->replayweight = NULL;
+mmc_utils.c:    cfg->replaytime = NULL;
+mmc_utils.c:    cfg->isextdet = 0;
+mmc_utils.c:    cfg->srcdir.w = 0.f;
+mmc_utils.c:    cfg->isatomic = 1;
+mmc_utils.c:    cfg->debugphoton = -1;
+mmc_utils.c:    cfg->savedetflag = 0x47;
+mmc_utils.c:    cfg->mediabyte = 1;
+mmc_utils.c:    cfg->tstart = 0.f;
+mmc_utils.c:    cfg->tstep = 0.f;
+mmc_utils.c:    cfg->tend = 0.f;
+mmc_utils.c:    cfg->mcmethod = mmMCX;
+mmc_utils.c:    memset(&(cfg->his), 0, sizeof(history));
+mmc_utils.c:    cfg->his.version = 1;
+mmc_utils.c:    cfg->his.unitinmm = 1.f;
+mmc_utils.c:    cfg->his.normalizer = 1.f;
+mmc_utils.c:    cfg->his.respin = 1;
+mmc_utils.c:    cfg->his.srcnum = cfg->srcnum;
+mmc_utils.c:    cfg->his.savedetflag = 0;
+mmc_utils.c:    memcpy(cfg->his.magic, "MCXH", 4);
+mmc_utils.c:    memset(&(cfg->srcpos), 0, sizeof(float3));
+mmc_utils.c:    memset(&(cfg->srcdir), 0, sizeof(float3));
+mmc_utils.c:    memset(&(cfg->bary0), 0, sizeof(float4));
+mmc_utils.c:    memset(&(cfg->srcparam1), 0, sizeof(float4));
+mmc_utils.c:    memset(&(cfg->srcparam2), 0, sizeof(float4));
+mmc_utils.c:    cfg->srcpattern = NULL;
+mmc_utils.c:    cfg->voidtime = 1;
+mmc_utils.c:    memset(cfg->checkpt, 0, sizeof(unsigned int)*MAX_CHECKPOINT);
+mmc_utils.c:    memset(&(cfg->detparam1), 0, sizeof(float4));
+mmc_utils.c:    memset(&(cfg->detparam2), 0, sizeof(float4));
+mmc_utils.c:    cfg->detpattern = NULL;
+mmc_utils.c:    cfg->optlevel = 3;
+mmc_utils.c:    memset(cfg->deviceid, 0, MAX_DEVICE);
+mmc_utils.c:    memset(cfg->workload, 0, MAX_DEVICE * sizeof(float));
+mmc_utils.c:    cfg->deviceid[0] = '1'; /*use the first GPU device by default*/
+mmc_utils.c:    memset(cfg->compileropt, 0, MAX_PATH_LENGTH);
+mmc_utils.c:    memset(cfg->kernelfile, 0, MAX_SESSION_LENGTH);
+mmc_utils.c:    cfg->maxdetphoton = 1000000;
+mmc_utils.c:    cfg->exportfield = NULL;
+mmc_utils.c:    cfg->exportdetected = NULL;
+mmc_utils.c:    cfg->exportseed = NULL;
+mmc_utils.c:    cfg->detectedcount = 0;
+mmc_utils.c:    cfg->energytot = 0.f;
+mmc_utils.c:    cfg->energyabs = 0.f;
+mmc_utils.c:    cfg->energyesc = 0.f;
+mmc_utils.c:    cfg->runtime = 0;
+mmc_utils.c:    cfg->autopilot = 1;
+mmc_utils.c:    cfg->nbuffer = 0;
+mmc_utils.c:    cfg->gpuid = 0;
+mmc_utils.c:    cfg->clsource = (char*)mmc_core_cl;
+mmc_utils.c:    cfg->clsource = NULL;
+mmc_utils.c:    cfg->parentid = mpMATLAB;
+mmc_utils.c:    cfg->parentid = mpStandalone;
+mmc_utils.c:    if (cfg->medianum) {
+mmc_utils.c:        free(cfg->prop);
+mmc_utils.c:    if (cfg->detnum) {
+mmc_utils.c:        free(cfg->detpos);
+mmc_utils.c:    if (cfg->vol) {
+mmc_utils.c:        free(cfg->vol);
+mmc_utils.c:    if (cfg->srcpattern) {
+mmc_utils.c:        free(cfg->srcpattern);
+mmc_utils.c:    if (cfg->detpattern) {
+mmc_utils.c:        free(cfg->detpattern);
+mmc_utils.c:    if (cfg->photonseed) {
+mmc_utils.c:        free(cfg->photonseed);
+mmc_utils.c:    if (cfg->replayweight) {
+mmc_utils.c:        free(cfg->replayweight);
+mmc_utils.c:    if (cfg->replaytime) {
+mmc_utils.c:        free(cfg->replaytime);
+mmc_utils.c:    if (cfg->exportseed) {
+mmc_utils.c:        free(cfg->exportseed);
+mmc_utils.c:    if (cfg->exportdetected) {
+mmc_utils.c:        free(cfg->exportdetected);
+mmc_utils.c:    if (cfg->flog && cfg->flog != stdout && cfg->flog != stderr) {
+mmc_utils.c:        fclose(cfg->flog);
+mmc_utils.c:    if (cfg->shapedata) {
+mmc_utils.c:        free(cfg->shapedata);
+mmc_utils.c:    if (cfg->clsource && cfg->clsource != (char*)mmc_core_cl) {
+mmc_utils.c:        free(cfg->clsource);
+mmc_utils.c:    hdr.dim[1] = cfg->dim.x;
+mmc_utils.c:    hdr.dim[2] = cfg->dim.y;
+mmc_utils.c:    hdr.dim[3] = cfg->dim.z;
+mmc_utils.c:    hdr.dim[4] = len / (cfg->dim.x * cfg->dim.y * cfg->dim.z);
+mmc_utils.c:    hdr.pixdim[1] = cfg->steps.x;
+mmc_utils.c:    hdr.pixdim[2] = cfg->steps.y;
+mmc_utils.c:    hdr.pixdim[3] = cfg->steps.z;
+mmc_utils.c:        hdr.pixdim[4] = cfg->tstep * 1e6f;
+mmc_utils.c:        hdr.dim[2] = cfg->dim.x;
+mmc_utils.c:        hdr.dim[3] = cfg->dim.y;
+mmc_utils.c:        hdr.dim[4] = cfg->dim.z;
+mmc_utils.c:        hdr.pixdim[4] = cfg->unitinmm;
+mmc_utils.c:    UBJ_WRITE_KEY(root, "LastSliceID", uint32, cfg->maxgate);
+mmc_utils.c:    if (cfg->outputtype >= 0) {
+mmc_utils.c:        UBJ_WRITE_KEY(root, "Description", string, typestr[(int)cfg->outputtype]);
+mmc_utils.c:    UBJ_WRITE_KEY(root, "Name", string, cfg->session);
+mmc_utils.c:    if (mcx_jdataencode(vol, ndim, dims, (isfloat ? "single" : "uint32"), 4, cfg->zipid, root, 1, cfg)) {
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "LastSliceID", cfg->maxgate);
+mmc_utils.c:    if (cfg->outputtype >= 0) {
+mmc_utils.c:        cJSON_AddStringToObject(hdr, "Description", typestr[(int)cfg->outputtype]);
+mmc_utils.c:    cJSON_AddStringToObject(hdr, "Name", cfg->session);
+mmc_utils.c:    if (mcx_jdataencode(vol, ndim, dims, (isfloat ? "single" : "uint32"), 4, cfg->zipid, dat, 0, cfg)) {
+mmc_utils.c:    if (cfg->rootpath[0])
+mmc_utils.c:        sprintf(name, "%s\\%s", cfg->rootpath, cfg->session);
+mmc_utils.c:        sprintf(name, "%s/%s", cfg->rootpath, cfg->session);
+mmc_utils.c:        sprintf(name, "%s", cfg->session);
+mmc_utils.c:    if (!isref && (cfg->outputformat == ofNifti || cfg->outputformat == ofAnalyze)) {
+mmc_utils.c:        mcx_savenii(dat, len, name, NIFTI_TYPE_FLOAT64, cfg->outputformat, cfg);
+mmc_utils.c:    } else if (cfg->outputformat == ofJNifti || cfg->outputformat == ofBJNifti) {
+mmc_utils.c:        int d1 = (cfg->maxgate == 1);
+mmc_utils.c:        if (cfg->seed == SEED_FROM_FILE && cfg->replaydet == -1 && (cfg->detnum > 1 || cfg->srcnum > 1)) {
+mmc_utils.c:            uint dims[5] = {cfg->detnum* cfg->srcnum, cfg->maxgate, cfg->dim.z, cfg->dim.y, cfg->dim.x};
+mmc_utils.c:            float voxelsize[] = {1, cfg->tstep, cfg->steps.z, cfg->steps.y, cfg->steps.x};
+mmc_utils.c:            if (cfg->outputformat == ofJNifti) {
+mmc_utils.c:            uint dims[] = {cfg->dim.x, cfg->dim.y, cfg->dim.z, cfg->maxgate};
+mmc_utils.c:            float voxelsize[] = {cfg->steps.x, cfg->steps.y, cfg->steps.z, cfg->tstep};
+mmc_utils.c:            size_t datalen = cfg->dim.x * cfg->dim.y * cfg->dim.z * cfg->maxgate;
+mmc_utils.c:            if (cfg->outputformat == ofJNifti) {
+mmc_utils.c:    sprintf(fname, "%s%s.%s", name, (isref ? "_dref" : ""), (isref ? "bin" : outputformat[(int)cfg->outputformat]));
+mmc_utils.c:    if (!isref && cfg->outputformat == ofTX3) {
+mmc_utils.c:        fwrite(&(cfg->dim.x), sizeof(int), 3, fp);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "Version", cfg->his.version);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "MediaNum", cfg->his.maxmedia);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "DetNum", cfg->his.detnum);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "ColumnNum", cfg->his.colcount);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "TotalPhoton", cfg->his.totalphoton);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "SavedPhoton", cfg->his.savedphoton);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "LengthUnit", cfg->his.unitinmm);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "SeedByte", cfg->his.seedbyte);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "Normalizer", cfg->his.normalizer);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "Repeat", cfg->his.respin);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "SrcNum", cfg->his.srcnum);
+mmc_utils.c:    cJSON_AddNumberToObject(hdr, "SaveDetFlag", cfg->his.savedetflag);
+mmc_utils.c:    for (i = 0; i < cfg->medianum; i++) {
+mmc_utils.c:        cJSON_AddNumberToObject(dat, "mua", cfg->prop[i].mua / cfg->unitinmm);
+mmc_utils.c:        cJSON_AddNumberToObject(dat, "mus", cfg->prop[i].mus / cfg->unitinmm);
+mmc_utils.c:        cJSON_AddNumberToObject(dat, "g",   cfg->prop[i].g);
+mmc_utils.c:        cJSON_AddNumberToObject(dat, "n",   cfg->prop[i].n);
+mmc_utils.c:    if (cfg->his.detected == 0  && cfg->his.savedphoton) {
+mmc_utils.c:                    buf[i * dims[1] + j] = ppath[i * cfg->his.colcount + col + j];
+mmc_utils.c:            if (mcx_jdataencode(buf, 2, dims, dtype[id], 4, cfg->zipid, sub, 0, cfg)) {
+mmc_utils.c:        char colnum[] = {1, cfg->his.maxmedia, cfg->his.maxmedia, cfg->his.maxmedia, 3, 3, 1};
+mmc_utils.c:            if ((cfg->savedetflag >> id) & 0x1) {
+mmc_utils.c:                            ibuf[i * dims[1] + j] = ppath[i * cfg->his.colcount + col + j];
+mmc_utils.c:                            fbuf[i * dims[1] + j] = ppath[i * cfg->his.colcount + col + j];
+mmc_utils.c:                if (mcx_jdataencode(val, 2, dims, dtype[id], 4, cfg->zipid, sub, 0, cfg)) {
+mmc_utils.c:    if (cfg->issaveseed && seeds != NULL) {
+mmc_utils.c:        uint dims[2] = {count, cfg->his.seedbyte};
+mmc_utils.c:        if (mcx_jdataencode(seeds, 2, dims, "uint8", 1, cfg->zipid, sub, 0, cfg)) {
+mmc_utils.c:    filetag = ((cfg->his.detected == 0  && cfg->his.savedphoton) ? 't' : 'h');
+mmc_utils.c:    if (cfg->rootpath[0]) {
+mmc_utils.c:        sprintf(fhistory, "%s%c%s_%s.jdat", cfg->rootpath, pathsep, cfg->session, (filetag == 't' ? "traj" : "detp"));
+mmc_utils.c:        sprintf(fhistory, "%s_%s.jdat", cfg->session, (filetag == 't' ? "traj" : "detp"));
+mmc_utils.c:    if (cfg->flog > 0) { /*stdout is 1*/
+mmc_utils.c:        MMC_FPRINTF(cfg->flog, "%s\n", str);
+mmc_utils.c:        if (cfg->session[0] == '\0') {
+mmc_utils.c:            strcpy(cfg->session, "default");
+mmc_utils.c:        if (cfg->session[0] == '\0') {
+mmc_utils.c:            strncpy(cfg->session, fname, MAX_SESSION_LENGTH - 1);
+mmc_utils.c:        strncpy(cfg->meshtag, FIND_JSON_KEY("MeshID", "Mesh.MeshID", Mesh, (MMC_ERROR(-1, "You must specify mesh files"), ""), valuestring), MAX_SESSION_LENGTH - 1);
+mmc_utils.c:        cfg->e0 = FIND_JSON_KEY("InitElem", "Mesh.InitElem", Mesh, (MMC_ERROR(-1, "InitElem must be given"), 0.0), valueint);
+mmc_utils.c:            cfg->unitinmm = FIND_JSON_KEY("LengthUnit", "Mesh.LengthUnit", Mesh, 1.0, valuedouble);
+mmc_utils.c:                cfg->srcpos.x = subitem->child->valuedouble;
+mmc_utils.c:                cfg->srcpos.y = subitem->child->next->valuedouble;
+mmc_utils.c:                cfg->srcpos.z = subitem->child->next->next->valuedouble;
+mmc_utils.c:                cfg->srcdir.x = subitem->child->valuedouble;
+mmc_utils.c:                cfg->srcdir.y = subitem->child->next->valuedouble;
+mmc_utils.c:                cfg->srcdir.z = subitem->child->next->next->valuedouble;
+mmc_utils.c:                    cfg->srcdir.w = subitem->child->next->next->next->valuedouble;
+mmc_utils.c:                cfg->srctype = mcx_keylookup(subitem->valuestring, srctypeid);
+mmc_utils.c:                cfg->srcparam1.x = subitem->child->valuedouble;
+mmc_utils.c:                    cfg->srcparam1.y = subitem->child->next->valuedouble;
+mmc_utils.c:                        cfg->srcparam1.z = subitem->child->next->next->valuedouble;
+mmc_utils.c:                            cfg->srcparam1.w = subitem->child->next->next->next->valuedouble;
+mmc_utils.c:                cfg->srcparam2.x = subitem->child->valuedouble;
+mmc_utils.c:                    cfg->srcparam2.y = subitem->child->next->valuedouble;
+mmc_utils.c:                        cfg->srcparam2.z = subitem->child->next->next->valuedouble;
+mmc_utils.c:                            cfg->srcparam2.w = subitem->child->next->next->next->valuedouble;
+mmc_utils.c:                cfg->detnum = cJSON_GetArraySize(dets);
+mmc_utils.c:                cfg->detpos = (float4*)malloc(sizeof(float4) * cfg->detnum);
+mmc_utils.c:                for (i = 0; i < cfg->detnum; i++) {
+mmc_utils.c:                        cfg->detpos[i].x = pos->child->valuedouble;
+mmc_utils.c:                        cfg->detpos[i].y = pos->child->next->valuedouble;
+mmc_utils.c:                        cfg->detpos[i].z = pos->child->next->next->valuedouble;
+mmc_utils.c:                        cfg->detpos[i].w = rad->valuedouble;
+mmc_utils.c:            cfg->seed = FIND_JSON_KEY("RNGSeed", "Session.RNGSeed", Session, -1, valueint);
+mmc_utils.c:            cfg->nphoton = FIND_JSON_KEY("Photons", "Session.Photons", Session, 0, valueint);
+mmc_utils.c:        if (cfg->session[0] == '\0') {
+mmc_utils.c:            strncpy(cfg->session, FIND_JSON_KEY("ID", "Session.ID", Session, "default", valuestring), MAX_SESSION_LENGTH);
+mmc_utils.c:            cfg->isreflect = FIND_JSON_KEY("DoMismatch", "Session.DoMismatch", Session, cfg->isreflect, valueint);
+mmc_utils.c:            cfg->issave2pt = FIND_JSON_KEY("DoSaveVolume", "Session.DoSaveVolume", Session, cfg->issave2pt, valueint);
+mmc_utils.c:            cfg->isnormalized = FIND_JSON_KEY("DoNormalize", "Session.DoNormalize", Session, cfg->isnormalized, valueint);
+mmc_utils.c:            cfg->issavedet = FIND_JSON_KEY("DoPartialPath", "Session.DoPartialPath", Session, cfg->issavedet, valueint);
+mmc_utils.c:            cfg->isspecular = FIND_JSON_KEY("DoSpecular", "Session.DoSpecular", Session, cfg->isspecular, valueint);
+mmc_utils.c:            cfg->ismomentum = FIND_JSON_KEY("DoDCS", "Session.DoDCS", Session, cfg->ismomentum, valueint);
+mmc_utils.c:            cfg->issaveexit = FIND_JSON_KEY("DoSaveExit", "Session.DoSaveExit", Session, cfg->issaveexit, valueint);
+mmc_utils.c:            cfg->issaveseed = FIND_JSON_KEY("DoSaveSeed", "Session.DoSaveSeed", Session, cfg->issaveseed, valueint);
+mmc_utils.c:            cfg->basisorder = FIND_JSON_KEY("BasisOrder", "Session.BasisOrder", Session, cfg->basisorder, valueint);
+mmc_utils.c:        if (!cfg->outputformat) {
+mmc_utils.c:            cfg->outputformat = mcx_keylookup((char*)FIND_JSON_KEY("OutputFormat", "Session.OutputFormat", Session, "ascii", valuestring), outputformat);
+mmc_utils.c:        if (cfg->outputformat < 0) {
+mmc_utils.c:        if (cfg->debuglevel == 0) {
+mmc_utils.c:            cfg->debuglevel = mcx_parsedebugopt((char*)FIND_JSON_KEY("DebugFlag", "Session.DebugFlag", Session, "", valuestring));
+mmc_utils.c:            strncpy(val, FIND_JSON_KEY("RayTracer", "Session.RayTracer", Session, raytracing + cfg->method, valuestring), 1);
+mmc_utils.c:            cfg->method = val[0];
+mmc_utils.c:            strncpy(val, FIND_JSON_KEY("OutputType", "Session.OutputType", Session, outputtype + cfg->outputtype, valuestring), 1);
+mmc_utils.c:            cfg->outputtype = val[0];
+mmc_utils.c:                cfg->checkpt[i] = ck->valueint;
+mmc_utils.c:        cfg->tstart = FIND_JSON_KEY("T0", "Forward.T0", Forward, 0.0, valuedouble);
+mmc_utils.c:        cfg->tend  = FIND_JSON_KEY("T1", "Forward.T1", Forward, 0.0, valuedouble);
+mmc_utils.c:        cfg->tstep = FIND_JSON_KEY("Dt", "Forward.Dt", Forward, 0.0, valuedouble);
+mmc_utils.c:        cfg->nout = FIND_JSON_KEY("N0", "Forward.N0", Forward, cfg->nout, valuedouble);
+mmc_utils.c:        cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_utils.c:    if (cfg->meshtag[0] == '\0') {
+mmc_utils.c:    if (cfg->e0 == 0) {
+mmc_utils.c:    if (cfg->nphoton == 0) {
+mmc_utils.c:        cfg->nphoton = nphoton;
+mmc_utils.c:        MMC_FPRINTF(stdout, ">> %zu\nPlease specify the random number generator seed: [123456789]\n\t", cfg->nphoton);
+mmc_utils.c:    if (cfg->seed == 0x623F9A9E) {
+mmc_utils.c:        MMC_ASSERT(fscanf(in, "%d", &(cfg->seed) ) == 1);
+mmc_utils.c:        MMC_FPRINTF(stdout, ">> %d\nPlease specify the position of the source: [10 10 5]\n\t", cfg->seed);
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%f %f %f", &(cfg->srcpos.x), &(cfg->srcpos.y), &(cfg->srcpos.z) ) == 3);
+mmc_utils.c:                    cfg->srcpos.x, cfg->srcpos.y, cfg->srcpos.z);
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%f %f %f", &(cfg->srcdir.x), &(cfg->srcdir.y), &(cfg->srcdir.z)));
+mmc_utils.c:        cfg->srcdir.w = dtmp;
+mmc_utils.c:                    cfg->srcdir.x, cfg->srcdir.y, cfg->srcdir.z, cfg->srcdir.w);
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%f %f %f", &(cfg->tstart), &(cfg->tend), &(cfg->tstep) ) == 3);
+mmc_utils.c:                    cfg->tstart, cfg->tend, cfg->tstep);
+mmc_utils.c:    if (cfg->tstart > cfg->tend || cfg->tstep == 0.f) {
+mmc_utils.c:    if (cfg->tstep > cfg->tend - cfg->tstart) {
+mmc_utils.c:        cfg->tstep = cfg->tend - cfg->tstart;
+mmc_utils.c:    gates = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_utils.c:    /*if(cfg->maxgate>gates)*/
+mmc_utils.c:    cfg->maxgate = gates;
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%s", cfg->meshtag) == 1);
+mmc_utils.c:    if (cfg->rootpath[0]) {
+mmc_utils.c:        sprintf(comment, "%s\\%s", cfg->rootpath, cfg->meshtag);
+mmc_utils.c:        sprintf(comment, "%s/%s", cfg->rootpath, cfg->meshtag);
+mmc_utils.c:        memcpy(cfg->meshtag, comment, MAX_SESSION_LENGTH);
+mmc_utils.c:        MMC_FPRINTF(stdout, ">> %s\nPlease specify the index to the tetrahedral element enclosing the source [start from 1]:\n\t", cfg->meshtag);
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%d", &(cfg->e0)) == 1);
+mmc_utils.c:        MMC_FPRINTF(stdout, ">> %d\nPlease specify the total number of detectors and detector diameter (in mm):\n\t", cfg->e0);
+mmc_utils.c:    MMC_ASSERT(fscanf(in, "%d %f", &(cfg->detnum), &(cfg->detradius)) == 2);
+mmc_utils.c:        MMC_FPRINTF(stdout, ">> %d %f\n", cfg->detnum, cfg->detradius);
+mmc_utils.c:    cfg->detpos = (float4*)malloc(sizeof(float4) * cfg->detnum);
+mmc_utils.c:    if (cfg->issavedet) {
+mmc_utils.c:        cfg->issavedet = (cfg->detpos > 0);
+mmc_utils.c:    for (i = 0; i < cfg->detnum; i++) {
+mmc_utils.c:        MMC_ASSERT(fscanf(in, "%f %f %f", &(cfg->detpos[i].x), &(cfg->detpos[i].y), &(cfg->detpos[i].z)) == 3);
+mmc_utils.c:            cfg->detpos[i].w = dtmp;
+mmc_utils.c:            cfg->detpos[i].w = cfg->detradius;
+mmc_utils.c:            MMC_FPRINTF(stdout, ">> %f %f %f\n", cfg->detpos[i].x, cfg->detpos[i].y, cfg->detpos[i].z);
+mmc_utils.c:            cfg->srctype = srctype;
+mmc_utils.c:                MMC_FPRINTF(stdout, ">> %d\nPlease specify the source parameters set 1 (4 floating-points):\n\t", cfg->srctype);
+mmc_utils.c:            MMC_ASSERT(fscanf(in, "%f %f %f %f", &(cfg->srcparam1.x), &(cfg->srcparam1.y), &(cfg->srcparam1.z), &(cfg->srcparam1.w)) == 4);
+mmc_utils.c:                            cfg->srcparam1.x, cfg->srcparam1.y, cfg->srcparam1.z, cfg->srcparam1.w);
+mmc_utils.c:            if (fscanf(in, "%f %f %f %f", &(cfg->srcparam2.x), &(cfg->srcparam2.y), &(cfg->srcparam2.z), &(cfg->srcparam2.w)) == 4) {
+mmc_utils.c:                    MMC_FPRINTF(stdout, ">> %f %f %f %f\n", cfg->srcparam2.x, cfg->srcparam2.y, cfg->srcparam2.z, cfg->srcparam2.w);
+mmc_utils.c:                if (cfg->srctype == stPattern && cfg->srcparam1.w * cfg->srcparam2.w > 0) {
+mmc_utils.c:                    if (cfg->srcpattern) {
+mmc_utils.c:                        free(cfg->srcpattern);
+mmc_utils.c:                    MMC_ASSERT(fscanf(in, "%s %d", srcpatternfile, &(cfg->srcnum)) >= 1);
+mmc_utils.c:                    if (cfg->srcnum < 1) {
+mmc_utils.c:                    cfg->srcpattern = (float*)calloc((cfg->srcparam1.w * cfg->srcparam2.w * cfg->srcnum), sizeof(float));
+mmc_utils.c:                    MMC_ASSERT(fread(cfg->srcpattern, cfg->srcparam1.w * cfg->srcparam2.w * cfg->srcnum, sizeof(float), fp) == sizeof(float));
+mmc_utils.c:            if (cfg->detnum == 1 && cfg->detpos[0].w == 0.0) {
+mmc_utils.c:                MMC_ASSERT(fscanf(in, "%f %f %f %f", &(cfg->detparam1.x), &(cfg->detparam1.y), &(cfg->detparam1.z), &(cfg->detparam1.w)) == 4);
+mmc_utils.c:                                cfg->detparam1.x, cfg->detparam1.y, cfg->detparam1.z, cfg->detparam1.w);
+mmc_utils.c:                MMC_ASSERT(fscanf(in, "%f %f %f %f", &(cfg->detparam2.x), &(cfg->detparam2.y), &(cfg->detparam2.z), &(cfg->detparam2.w)) == 4);
+mmc_utils.c:                    MMC_FPRINTF(stdout, ">> %f %f %f %f\n", cfg->detparam2.x, cfg->detparam2.y, cfg->detparam2.z, cfg->detparam2.w);
+mmc_utils.c:                if (cfg->seed == SEED_FROM_FILE && (cfg->outputtype == otWL || cfg->outputtype == otWP) && cfg->detparam1.w * cfg->detparam2.w > 0) {
+mmc_utils.c:                    if (cfg->detpattern) {
+mmc_utils.c:                        free(cfg->detpattern);
+mmc_utils.c:                    cfg->detpattern = (float*)calloc((cfg->detparam1.w * cfg->detparam2.w), sizeof(float));
+mmc_utils.c:                    MMC_ASSERT(fread(cfg->detpattern, cfg->detparam1.w * cfg->detparam2.w, sizeof(float), fp) == sizeof(float));
+mmc_utils.c:    MMC_FPRINTF(out, "%zu\n", (cfg->nphoton) );
+mmc_utils.c:    MMC_FPRINTF(out, "%d\n", (cfg->seed) );
+mmc_utils.c:    MMC_FPRINTF(out, "%f %f %f\n", (cfg->srcpos.x), (cfg->srcpos.y), (cfg->srcpos.z) );
+mmc_utils.c:    MMC_FPRINTF(out, "%f %f %f\n", (cfg->srcdir.x), (cfg->srcdir.y), (cfg->srcdir.z) );
+mmc_utils.c:    MMC_FPRINTF(out, "%f %f %f\n", (cfg->tstart), (cfg->tend), (cfg->tstep) );
+mmc_utils.c:    MMC_FPRINTF(out, "%f %d %d %d\n", (cfg->steps.x), (cfg->dim.x), (cfg->crop0.x), (cfg->crop1.x));
+mmc_utils.c:    MMC_FPRINTF(out, "%f %d %d %d\n", (cfg->steps.y), (cfg->dim.y), (cfg->crop0.y), (cfg->crop1.y));
+mmc_utils.c:    MMC_FPRINTF(out, "%f %d %d %d\n", (cfg->steps.z), (cfg->dim.z), (cfg->crop0.z), (cfg->crop1.z));
+mmc_utils.c:    MMC_FPRINTF(out, "%d", (cfg->medianum));
+mmc_utils.c:    for (i = 0; i < cfg->medianum; i++) {
+mmc_utils.c:        MMC_FPRINTF(out, "%f %f %f %f\n", (cfg->prop[i].mus), (cfg->prop[i].g), (cfg->prop[i].mua), (cfg->prop[i].n));
+mmc_utils.c:    MMC_FPRINTF(out, "%d", (cfg->detnum));
+mmc_utils.c:    for (i = 0; i < cfg->detnum; i++) {
+mmc_utils.c:        MMC_FPRINTF(out, "%f %f %f %f\n", (cfg->detpos[i].x), (cfg->detpos[i].y), (cfg->detpos[i].z), (cfg->detpos[i].w));
+mmc_utils.c:    cJSON_AddStringToObject(obj, "ID", cfg->session);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "Photons", cfg->nphoton);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "RNGSeed", (uint)cfg->seed);
+mmc_utils.c:    if (cfg->isreflect > 1) {
+mmc_utils.c:        cJSON_AddNumberToObject(obj, "DoMismatch", cfg->isreflect);
+mmc_utils.c:        cJSON_AddBoolToObject(obj, "DoMismatch", cfg->isreflect);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoSaveVolume", cfg->issave2pt);
+mmc_utils.c:    if (cfg->isreflect > 1) {
+mmc_utils.c:        cJSON_AddNumberToObject(obj, "DoNormalize", cfg->isnormalized);
+mmc_utils.c:        cJSON_AddBoolToObject(obj, "DoNormalize", cfg->isnormalized);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoPartialPath", cfg->issavedet);
+mmc_utils.c:    if (cfg->issaveref) {
+mmc_utils.c:        cJSON_AddNumberToObject(obj, "DoSaveRef", cfg->issaveref);
+mmc_utils.c:        cJSON_AddBoolToObject(obj, "DoSaveRef", cfg->issaveref);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoSaveExit", cfg->issaveexit);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoSaveSeed", cfg->issaveseed);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoAutoThread", cfg->autopilot);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoDCS", cfg->ismomentum);
+mmc_utils.c:    cJSON_AddBoolToObject(obj, "DoSpecular", cfg->isspecular);
+mmc_utils.c:    if (cfg->rootpath[0] != '\0') {
+mmc_utils.c:        cJSON_AddStringToObject(obj, "RootPath", cfg->rootpath);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "DebugFlag", cfg->debuglevel);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "SaveDataMask", cfg->savedetflag);
+mmc_utils.c:    if (cfg->outputformat >= 0) {
+mmc_utils.c:        cJSON_AddStringToObject(obj, "OutputFormat", outputformat[(int)cfg->outputformat]);
+mmc_utils.c:    if (cfg->outputtype >= 0) {
+mmc_utils.c:        outputtypestr[0] = outputtype[(int)cfg->outputtype];
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "T0", cfg->tstart);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "T1", cfg->tend);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "Dt", cfg->tstep);
+mmc_utils.c:    cJSON_AddNumberToObject(obj, "LengthUnit", cfg->unitinmm);
+mmc_utils.c:    for (i = 0; i < cfg->medianum; i++) {
+mmc_utils.c:        cJSON_AddNumberToObject(tmp, "mua", cfg->prop[i].mua / cfg->unitinmm);
+mmc_utils.c:        cJSON_AddNumberToObject(tmp, "mus", cfg->prop[i].mus / cfg->unitinmm);
+mmc_utils.c:        cJSON_AddNumberToObject(tmp, "g",   cfg->prop[i].g);
+mmc_utils.c:        cJSON_AddNumberToObject(tmp, "n",   cfg->prop[i].n);
+mmc_utils.c:    cJSON_AddItemToObject(obj, "Dim", cJSON_CreateIntArray((int*) & (cfg->dim.x), 3));
+mmc_utils.c:    if (cfg->srctype >= 0) {
+mmc_utils.c:        cJSON_AddStringToObject(sub, "Type", srctypeid[(int)cfg->srctype]);
+mmc_utils.c:    cJSON_AddItemToObject(sub, "Pos", cJSON_CreateFloatArray(&(cfg->srcpos.x), 3));
+mmc_utils.c:    cJSON_AddItemToObject(sub, "Dir", cJSON_CreateFloatArray(&(cfg->srcdir.x), 4));
+mmc_utils.c:    cJSON_AddItemToObject(sub, "Param1", cJSON_CreateFloatArray(&(cfg->srcparam1.x), 4));
+mmc_utils.c:    cJSON_AddItemToObject(sub, "Param2", cJSON_CreateFloatArray(&(cfg->srcparam2.x), 4));
+mmc_utils.c:    cJSON_AddNumberToObject(sub, "SrcNum", cfg->srcnum);
+mmc_utils.c:    for (i = 0; i < cfg->detnum; i++) {
+mmc_utils.c:        cJSON_AddItemToObject(tmp, "Pos", cJSON_CreateFloatArray(&(cfg->detpos[i].x), 3));
+mmc_utils.c:        cJSON_AddNumberToObject(tmp, "R", cfg->detpos[i].w);
+mmc_utils.c:    if (cfg->shapedata) {
+mmc_utils.c:        cJSON* shape = cJSON_Parse(cfg->shapedata), *sp;
+mmc_utils.c:        fprintf(cfg->flog, "%s\n", jsonstr);
+mmc_utils.c:        cfg->mediabyte = 4;
+mmc_utils.c:            cfg->mediabyte = 1;
+mmc_utils.c:            cfg->mediabyte = 2;
+mmc_utils.c:            cfg->isrowmajor = 1;
+mmc_utils.c:    if (!cfg->isdumpjson) {
+mmc_utils.c:        if (!cfg->isdumpjson) {
+mmc_utils.c:            if (!cfg->isdumpjson) {
+mmc_utils.c:    if (cfg->nphoton <= 0) {
+mmc_utils.c:    if (cfg->tstart > cfg->tend || cfg->tstep == 0.f) {
+mmc_utils.c:    if (cfg->tstep > cfg->tend - cfg->tstart) {
+mmc_utils.c:        cfg->tstep = cfg->tend - cfg->tstart;
+mmc_utils.c:    if (cfg->steps.x != cfg->steps.y || cfg->steps.y != cfg->steps.z) {
+mmc_utils.c:    if (fabs(cfg->srcdir.x * cfg->srcdir.x + cfg->srcdir.y * cfg->srcdir.y + cfg->srcdir.z * cfg->srcdir.z - 1.f) > 1e-4) {
+mmc_utils.c:    if (cfg->tend <= cfg->tstart) {
+mmc_utils.c:    cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_utils.c:    cfg->tend = cfg->tstart + cfg->tstep * cfg->maxgate;
+mmc_utils.c:    if (cfg->srctype == stPattern && cfg->srcpattern == NULL) {
+mmc_utils.c:    if (cfg->srcnum > 1 && cfg->seed == SEED_FROM_FILE) {
+mmc_utils.c:    if (cfg->seed < 0 && cfg->seed != SEED_FROM_FILE) {
+mmc_utils.c:        cfg->seed = time(NULL);
+mmc_utils.c:    if (cfg->compute != cbSSE && (cfg->method != rtBLBadouelGrid && cfg->method != rtBLBadouel)) {
+mmc_utils.c:        cfg->method = rtBLBadouel;
+mmc_utils.c:    if (cfg->method == rtBLBadouelGrid) {
+mmc_utils.c:        cfg->basisorder = 0;
+mmc_utils.c:        if (cfg->deviceid[i] == '0') {
+mmc_utils.c:            cfg->deviceid[i] = '\0';
+mmc_utils.c:    if (cfg->issavedet && cfg->detnum == 0 && cfg->isextdet == 0) {
+mmc_utils.c:        cfg->issavedet = 0;
+mmc_utils.c:    if (cfg->issavedet == 0) {
+mmc_utils.c:        cfg->ismomentum = 0;
+mmc_utils.c:        cfg->issaveexit = 0;
+mmc_utils.c:    cfg->savedetflag = 0x47;
+mmc_utils.c:    if (cfg->ismomentum) {
+mmc_utils.c:        cfg->savedetflag = SET_SAVE_MOM(cfg->savedetflag);
+mmc_utils.c:    if (cfg->issaveexit) {
+mmc_utils.c:        cfg->savedetflag = SET_SAVE_PEXIT(cfg->savedetflag);
+mmc_utils.c:        cfg->savedetflag = SET_SAVE_VEXIT(cfg->savedetflag);
+mmc_utils.c:                    MMC_FPRINTF(cfg->flog, "option: %s\n", argv[i]);
+mmc_utils.c:                    cfg->nphoton = (size_t)np;
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->nthread), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->nblocksize), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, cfg->session, "string");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->issaveseed), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->maxgate), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->isreflect), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->issavedet), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->mcmethod), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->issaveexit), "bool");
+mmc_utils.c:                    if (cfg->issaveexit) {
+mmc_utils.c:                        cfg->issavedet = 1;
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->issaveref), "char");
+mmc_utils.c:                    if (cfg->issaveref) {
+mmc_utils.c:                        cfg->issaveref = 1;
+mmc_utils.c:                        cfg->zipid = mcx_keylookup(argv[++i], zipformat);
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->zipid), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->basisorder), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->isspecular), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->respin), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->issave2pt), "bool");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->minenergy), "float");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->isnormalized), "bool");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, cfg->seedfile, "string");
+mmc_utils.c:                        cfg->seed = SEED_FROM_FILE;
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->seed), "int");
+mmc_utils.c:                    if ((cfg->outputformat = mcx_keylookup(argv[++i], outputformat)) < 0) {
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->outputtype), "char");
+mmc_utils.c:                    if (mcx_lookupindex(&(cfg->outputtype), outputtype)) {
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->method), "char");
+mmc_utils.c:                    if (mcx_lookupindex(&(cfg->method), raytracing)) {
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->sradius), "float");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->replaydet), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->unitinmm), "float");
+mmc_utils.c:                    cfg->isgpuinfo = 2;
+mmc_utils.c:                    cfg->isgpuinfo = 1;
+mmc_utils.c:                    cfg->compileropt[strlen(cfg->compileropt)] = ' ';
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, cfg->compileropt + strlen(cfg->compileropt), "string");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->optlevel), "int");
+mmc_utils.c:                        cfg->debuglevel = mcx_parsedebugopt(argv[++i]);
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->debuglevel), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->voidtime), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->maxdetphoton), "int");
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, &(cfg->autopilot), "int");
+mmc_utils.c:                        cfg->compute = mcx_keylookup(argv[++i], computebackend);
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->compute), "int");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, cfg->deviceid, "string");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->gpuid), "int");
+mmc_utils.c:                        memset(cfg->deviceid, '0', MAX_DEVICE);
+mmc_utils.c:                        if (cfg->gpuid > 0 && cfg->gpuid < MAX_DEVICE) {
+mmc_utils.c:                            cfg->deviceid[cfg->gpuid - 1] = '1';
+mmc_utils.c:                    i = mcx_readarg(argc, argv, i, cfg->workload, "floatlist");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->ismomentum), "bool");
+mmc_utils.c:                        if (cfg->ismomentum) {
+mmc_utils.c:                            cfg->issavedet = 1;
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->isatomic), "bool");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, cfg->rootpath, "string");
+mmc_utils.c:                        cfg->jsonfile[0] = '-';
+mmc_utils.c:                            cfg->isdumpjson = 1;
+mmc_utils.c:                            cfg->isdumpjson = 1;
+mmc_utils.c:                            memcpy(cfg->jsonfile, argv[i + 1], MIN(strlen(argv[i + 1]), MAX_PATH_LENGTH));
+mmc_utils.c:                            i = mcx_readarg(argc, argv, i, &(cfg->isdumpjson), "int");
+mmc_utils.c:                            MMC_FPRINTF(cfg->flog, "Built-in benchmarks:\n");
+mmc_utils.c:                                MMC_FPRINTF(cfg->flog, "\t%s\n", benchname[i]);
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->debugphoton), "int");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->nbuffer), "int");
+mmc_utils.c:                        i = mcx_readarg(argc, argv, i, &(cfg->steps.x), "int");
+mmc_utils.c:                        cfg->steps.y = cfg->steps.x;
+mmc_utils.c:                        cfg->steps.z = cfg->steps.x;
+mmc_utils.c:                        MMC_FPRINTF(cfg->flog, "unknown verbose option: --%s\n", argv[i] + 2);
+mmc_utils.c:                    MMC_FPRINTF(cfg->flog, "option: %s\n", argv[i]);
+mmc_utils.c:    if (issavelog && cfg->session[0]) {
+mmc_utils.c:        sprintf(logfile, "%s.log", cfg->session);
+mmc_utils.c:        cfg->flog = fopen(logfile, "wt");
+mmc_utils.c:        if (cfg->flog == NULL) {
+mmc_utils.c:            cfg->flog = stdout;
+mmc_utils.c:            MMC_FPRINTF(cfg->flog, "unable to save to log file, will print from stdout\n");
+mmc_utils.c:    if (cfg->kernelfile[0] != '\0' && cfg->isgpuinfo != 2) {
+mmc_utils.c:        FILE* fp = fopen(cfg->kernelfile, "rb");
+mmc_utils.c:        if (cfg->clsource != (char*)mmc_core_cl) {
+mmc_utils.c:            free(cfg->clsource);
+mmc_utils.c:        cfg->clsource = (char*)malloc(srclen + 1);
+mmc_utils.c:        MMC_ASSERT((fread(cfg->clsource, srclen, 1, fp) == 1));
+mmc_utils.c:        cfg->clsource[srclen] = '\0';
+mmc_utils.c:    if ((cfg->outputtype == otJacobian || cfg->outputtype == otWL || cfg->outputtype == otWP) && cfg->seed != SEED_FROM_FILE) {
+mmc_utils.c:    if (cfg->isgpuinfo != 2) { /*print gpu info only*/
+mmc_utils.c:    if (cfg->isgpuinfo == 0) {
+mmc_utils.c:    if (cfg->outputformat == ofJNifti || cfg->outputformat == ofBJNifti) {
+mmc_utils.c:    if (cfg->rootpath[0]) {
+mmc_utils.c:        sprintf(fhistory, "%s%c%s.mch", cfg->rootpath, pathsep, cfg->session);
+mmc_utils.c:        sprintf(fhistory, "%s.mch", cfg->session);
+mmc_utils.c:    fwrite(&(cfg->his), sizeof(history), 1, fp);
+mmc_utils.c:    fwrite(ppath, sizeof(float), count * cfg->his.colcount, fp);
+mmc_utils.c:    MMC_FPRINTF(cfg->flog, S_YELLOW"\
+mmclab.cpp:    if (strcmp(name, "nphoton") == 0 && cfg->photonseed != NULL) {
+mmclab.cpp:    cfg->flog = stderr;
+mmclab.cpp:        cfg->e0 = val[0];
+mmclab.cpp:        printf("mmc.e0=%d;\n", cfg->e0);
+mmclab.cpp:        cfg->implicit = 1;
+mmclab.cpp:        cfg->implicit = 1;
+mmclab.cpp:        cfg->implicit = 2;
+mmclab.cpp:        cfg->detnum = arraydim[0];
+mmclab.cpp:        if (cfg->detpos) {
+mmclab.cpp:            free(cfg->detpos);
+mmclab.cpp:        cfg->detpos = (float4*)malloc(cfg->detnum * sizeof(float4));
+mmclab.cpp:            for (i = 0; i < cfg->detnum; i++) {
+mmclab.cpp:                ((float*)(&cfg->detpos[i]))[j] = val[j * cfg->detnum + i];
+mmclab.cpp:        printf("mmc.detnum=%d;\n", cfg->detnum);
+mmclab.cpp:        cfg->his.maxmedia = mesh->prop;
+mmclab.cpp:        cfg->debuglevel = mcx_parsedebugopt(buf);
+mmclab.cpp:        cfg->srctype = mcx_keylookup(strtypestr, srctypeid);
+mmclab.cpp:        if (cfg->srctype == -1) {
+mmclab.cpp:        int status = mxGetString(item, cfg->session, MAX_SESSION_LENGTH);
+mmclab.cpp:        printf("mmc.session='%s';\n", cfg->session);
+mmclab.cpp:        if (cfg->srcpattern) {
+mmclab.cpp:            free(cfg->srcpattern);
+mmclab.cpp:            cfg->srcnum = arraydim[2];
+mmclab.cpp:            cfg->srcnum = 1;
+mmclab.cpp:        cfg->srcpattern = (float*)malloc(arraydim[0] * arraydim[1] * cfg->srcnum * sizeof(float));
+mmclab.cpp:        for (k = 0; k < arraydim[0]*arraydim[1]*cfg->srcnum; k++) {
+mmclab.cpp:            cfg->srcpattern[k] = val[k];
+mmclab.cpp:        printf("mmc.srcpattern=[%d %d %d];\n", (int)arraydim[0], (int)arraydim[1], cfg->srcnum);
+mmclab.cpp:        cfg->method = mcx_keylookup(methodstr, methods);
+mmclab.cpp:        if (cfg->method == -1) {
+mmclab.cpp:        cfg->outputtype = mcx_keylookup(outputstr, outputtype);
+mmclab.cpp:        if (cfg->outputtype == -1) {
+mmclab.cpp:        cfg->compute = mcx_keylookup(computestr, computebackend);
+mmclab.cpp:        if (cfg->compute == -1) {
+mmclab.cpp:            cfg->seed = val[0];
+mmclab.cpp:            printf("mmc.seed=%d;\n", cfg->seed);
+mmclab.cpp:            cfg->photonseed = malloc(arraydim[0] * arraydim[1]);
+mmclab.cpp:            memcpy(cfg->photonseed, mxGetData(item), arraydim[0]*arraydim[1]);
+mmclab.cpp:            cfg->seed = SEED_FROM_FILE;
+mmclab.cpp:            cfg->nphoton = arraydim[1];
+mmclab.cpp:            printf("mmc.nphoton=%zu;\n", cfg->nphoton);
+mmclab.cpp:        cfg->his.detected = arraydim[0] * arraydim[1];
+mmclab.cpp:        cfg->replayweight = (float*)malloc(cfg->his.detected * sizeof(float));
+mmclab.cpp:        memcpy(cfg->replayweight, mxGetData(item), cfg->his.detected * sizeof(float));
+mmclab.cpp:        printf("mmc.replayweight=%d;\n", cfg->his.detected);
+mmclab.cpp:        cfg->his.detected = arraydim[0] * arraydim[1];
+mmclab.cpp:        cfg->replaytime = (float*)malloc(cfg->his.detected * sizeof(float));
+mmclab.cpp:        memcpy(cfg->replaytime, mxGetData(item), cfg->his.detected * sizeof(float));
+mmclab.cpp:        printf("mmc.replaytime=%d;\n", cfg->his.detected);
+mmclab.cpp:            int status = mxGetString(item, cfg->deviceid, MAX_DEVICE);
+mmclab.cpp:            printf("mmc.gpuid='%s';\n", cfg->deviceid);
+mmclab.cpp:            cfg->gpuid = val[0];
+mmclab.cpp:            memset(cfg->deviceid, 0, MAX_DEVICE);
+mmclab.cpp:            if (cfg->gpuid > 0 && cfg->gpuid < MAX_DEVICE) {
+mmclab.cpp:                memset(cfg->deviceid, '0', cfg->gpuid - 1);
+mmclab.cpp:                cfg->deviceid[cfg->gpuid - 1] = '1';
+mmclab.cpp:            printf("mmc.gpuid=%d;\n", cfg->gpuid);
+mmclab.cpp:            if (cfg->deviceid[i] == '0') {
+mmclab.cpp:                cfg->deviceid[i] = '\0';
+mmclab.cpp:            cfg->workload[i] = val[i];
+mmclab.cpp:    if (cfg->nphoton <= 0) {
+mmclab.cpp:    if (cfg->tstart > cfg->tend || cfg->tstep == 0.f) {
+mmclab.cpp:    if (cfg->tstep > cfg->tend - cfg->tstart) {
+mmclab.cpp:        cfg->tstep = cfg->tend - cfg->tstart;
+mmclab.cpp:    if (ABS(cfg->srcdir.x * cfg->srcdir.x + cfg->srcdir.y * cfg->srcdir.y + cfg->srcdir.z * cfg->srcdir.z - 1.f) > 1e-5) {
+mmclab.cpp:    if (cfg->tend <= cfg->tstart) {
+mmclab.cpp:    cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmclab.cpp:    cfg->tend = cfg->tstart + cfg->tstep * cfg->maxgate;
+mmclab.cpp:    if (cfg->method == rtBLBadouelGrid) {
+mmclab.cpp:        cfg->basisorder = 0;
+mmclab.cpp:    datalen = (cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : ( (cfg->basisorder) ? mesh->nn : mesh->ne);
+mmclab.cpp:    mesh->weight = (double*)calloc(sizeof(double) * datalen * cfg->srcnum, cfg->maxgate);
+mmclab.cpp:    if (cfg->srctype == stPattern && cfg->srcpattern == NULL) {
+mmclab.cpp:    if (cfg->srcnum > 1 && cfg->seed == SEED_FROM_FILE) {
+mmclab.cpp:    if (cfg->method != rtBLBadouelGrid && cfg->unitinmm != 1.f) {
+mmclab.cpp:            mesh->med[i].mus *= cfg->unitinmm;
+mmclab.cpp:            mesh->med[i].mua *= cfg->unitinmm;
+mmclab.cpp:    cfg->his.unitinmm = cfg->unitinmm;
+mmclab.cpp:    if (cfg->steps.x != cfg->steps.y || cfg->steps.y != cfg->steps.z) {
+mmclab.cpp:    if (cfg->isextdet) {
+mmclab.cpp:    if (cfg->issavedet && cfg->detnum == 0 && cfg->isextdet == 0) {
+mmclab.cpp:        cfg->issavedet = 0;
+mmclab.cpp:    if (cfg->seed < 0 && cfg->seed != SEED_FROM_FILE) {
+mmclab.cpp:        cfg->seed = time(NULL);
+mmclab.cpp:    if (cfg->issavedet == 0) {
+mmclab.cpp:        cfg->ismomentum = 0;
+mmclab.cpp:        cfg->issaveexit = 0;
+mmclab.cpp:    if (cfg->seed == SEED_FROM_FILE && cfg->his.detected != cfg->nphoton) {
+mmclab.cpp:        cfg->his.detected = 0;
+mmclab.cpp:        if (cfg->replayweight == NULL) {
+mmclab.cpp:        } else if (cfg->replaytime == NULL) {
+mmclab.cpp:    // cfg->his.maxmedia=cfg->medianum-1; /*skip medium 0*/
+mmclab.cpp:    cfg->his.detnum = cfg->detnum;
+mmclab.cpp:    cfg->his.colcount = (1 + (cfg->ismomentum > 0)) * cfg->his.maxmedia + (cfg->issaveexit > 0) * 6 + 1;
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix init complete:  \t%d ms\n", GetTimeMillis() - tic0);
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix module complete:  \t%d ms\n", GetTimeMillis() - tic0);
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix device programs complete:  \t%d ms\n",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix acceleration structure complete:  \t%d ms\n",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix pipeline complete:  \t%d ms\n",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix shader binding table complete:  \t%d ms\n",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "optix launch parameters complete:  \t%d ms\n",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "lauching OptiX for time window [%.1fns %.1fns] ...\n",
+mmc_optix_utils.cpp:        cfg->tstart * 1e9, cfg->tend * 1e9);
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "kernel complete:  \t%d ms\nretrieving flux ... \t",
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    MMC_FPRINTF(cfg->flog, "transfer complete:        %d ms\n", GetTimeMillis() - tic0);
+mmc_optix_utils.cpp:    fflush(cfg->flog);
+mmc_optix_utils.cpp:    if (cfg->isnormalized) {
+mmc_optix_utils.cpp:        MMC_FPRINTF(cfg->flog, "normalizing raw data ...\t");
+mmc_optix_utils.cpp:        fflush(cfg->flog);
+mmc_optix_utils.cpp:        // not used if cfg->method == rtBLBadouelGrid
+mmc_optix_utils.cpp:        cfg->energyabs = 0.0f;
+mmc_optix_utils.cpp:        cfg->energytot = cfg->nphoton;
+mmc_optix_utils.cpp:        mesh_normalize(mesh, cfg, cfg->energyabs, cfg->energytot, 0);
+mmc_optix_utils.cpp:        MMC_FPRINTF(cfg->flog, "normalization complete:    %d ms\n",
+mmc_optix_utils.cpp:        fflush(cfg->flog);
+mmc_optix_utils.cpp:        if (cfg->issave2pt && cfg->parentid == mpStandalone) {
+mmc_optix_utils.cpp:            MMC_FPRINTF(cfg->flog, "saving data to file ...\t");
+mmc_optix_utils.cpp:            MMC_FPRINTF(cfg->flog, "saving data complete : %d ms\n\n",
+mmc_optix_utils.cpp:            fflush(cfg->flog);
+mmc_optix_utils.cpp:    if (cfg->method != rtBLBadouelGrid) {
+mmc_optix_utils.cpp:    int timeSteps = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_optix_utils.cpp:        optixcfg->launchParams.medium[i].mua = mesh->med[i].mua;
+mmc_optix_utils.cpp:        optixcfg->launchParams.medium[i].mus = mesh->med[i].mus;
+mmc_optix_utils.cpp:        optixcfg->launchParams.medium[i].g = mesh->med[i].g;
+mmc_optix_utils.cpp:        optixcfg->launchParams.medium[i].n = mesh->med[i].n;
+mmc_optix_utils.cpp:    optixcfg->launchParams.srcpos = make_float3(cfg->srcpos.x,
+mmc_optix_utils.cpp:                                                cfg->srcpos.y,
+mmc_optix_utils.cpp:                                                cfg->srcpos.z);
+mmc_optix_utils.cpp:    optixcfg->launchParams.srcdir = make_float3(cfg->srcdir.x,
+mmc_optix_utils.cpp:                                                cfg->srcdir.y,
+mmc_optix_utils.cpp:                                                cfg->srcdir.z);
+mmc_optix_utils.cpp:    optixcfg->launchParams.nmin = make_float3(mesh->nmin.x,
+mmc_optix_utils.cpp:    optixcfg->launchParams.nmax = make_float3(mesh->nmax.x - mesh->nmin.x,
+mmc_optix_utils.cpp:    optixcfg->launchParams.crop0 = make_uint4(cfg->crop0.x,
+mmc_optix_utils.cpp:                                               cfg->crop0.y,
+mmc_optix_utils.cpp:                                               cfg->crop0.z,
+mmc_optix_utils.cpp:                                               cfg->crop0.z * timeSteps);
+mmc_optix_utils.cpp:    optixcfg->launchParams.dstep = 1.0f / cfg->unitinmm;
+mmc_optix_utils.cpp:    optixcfg->launchParams.tstart = cfg->tstart;
+mmc_optix_utils.cpp:    optixcfg->launchParams.tend = cfg->tend;
+mmc_optix_utils.cpp:    optixcfg->launchParams.Rtstep = 1.0f / cfg->tstep;
+mmc_optix_utils.cpp:    optixcfg->launchParams.maxgate = cfg->maxgate;
+mmc_optix_utils.cpp:    optixcfg->launchParams.mediumid0 = mesh->type[cfg->e0-1];
+mmc_optix_utils.cpp:    optixcfg->launchParams.gashandle0 = optixcfg->gashandles[optixcfg->launchParams.mediumid0];
+mmc_optix_utils.cpp:    optixcfg->launchParams.isreflect = cfg->isreflect;
+mmc_optix_utils.cpp:    optixcfg->launchParams.outputtype = static_cast<int>(cfg->outputtype);
+mmc_optix_utils.cpp:    int totalthread = cfg->nthread;
+mmc_optix_utils.cpp:    gpuid = cfg->deviceid[threadid] - 1;
+mmc_optix_utils.cpp:    if (cfg->autopilot)
+mmc_optix_utils.cpp:    optixcfg->launchWidth = totalthread;
+mmc_optix_utils.cpp:    optixcfg->launchParams.threadphoton = cfg->nphoton / optixcfg->launchWidth;
+mmc_optix_utils.cpp:    optixcfg->launchParams.oddphoton =
+mmc_optix_utils.cpp:        cfg->nphoton - optixcfg->launchParams.threadphoton * totalthread;
+mmc_optix_utils.cpp:    optixcfg->outputBufferSize = (optixcfg->launchParams.crop0.w << 1);
+mmc_optix_utils.cpp:    optixcfg->outputHostBuffer = (float*)calloc(optixcfg->outputBufferSize, sizeof(float));
+mmc_optix_utils.cpp:    optixcfg->outputBuffer.alloc_and_upload(optixcfg->outputHostBuffer,
+mmc_optix_utils.cpp:        optixcfg->outputBufferSize);
+mmc_optix_utils.cpp:    optixcfg->launchParams.outputbuffer = optixcfg->outputBuffer.d_pointer();
+mmc_optix_utils.cpp:    if (cfg->seed > 0) {
+mmc_optix_utils.cpp:        srand(cfg->seed);
+mmc_optix_utils.cpp:    optixcfg->seedBuffer.alloc_and_upload(hseed, totalthread);
+mmc_optix_utils.cpp:    optixcfg->launchParams.seedbuffer = optixcfg->seedBuffer.d_pointer();
+mmc_optix_utils.cpp:    optixcfg->launchParamsBuffer.alloc_and_upload(&optixcfg->launchParams, 1);
+mmc_optix_utils.cpp:    gpuid = cfg->deviceid[threadid] - 1;
+mmc_optix_utils.cpp:    CUDA_ASSERT(cudaStreamCreate(&optixcfg->stream));
+mmc_optix_utils.cpp:    cudaGetDeviceProperties(&optixcfg->deviceProps, gpuid);
+mmc_optix_utils.cpp:    std::cout << "Running on device: " << optixcfg->deviceProps.name << std::endl;
+mmc_optix_utils.cpp:    CUresult cuRes = cuCtxGetCurrent(&optixcfg->cudaContext);
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixDeviceContextCreate(optixcfg->cudaContext, &options,
+mmc_optix_utils.cpp:        &optixcfg->optixContext));
+mmc_optix_utils.cpp:    optixcfg->moduleCompileOptions.maxRegisterCount = OPTIX_COMPILE_DEFAULT_MAX_REGISTER_COUNT;
+mmc_optix_utils.cpp:    optixcfg->moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+mmc_optix_utils.cpp:    optixcfg->moduleCompileOptions.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+mmc_optix_utils.cpp:    optixcfg->moduleCompileOptions.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+mmc_optix_utils.cpp:    optixcfg->moduleCompileOptions.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions = {};
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.traversableGraphFlags =
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.usesMotionBlur     = false;
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.numPayloadValues   = 16;
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.numAttributeValues = 2;  // for triangle
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
+mmc_optix_utils.cpp:    optixcfg->pipelineCompileOptions.pipelineLaunchParamsVariableName = "gcfg";
+mmc_optix_utils.cpp:    optixcfg->pipelineLinkOptions.maxTraceDepth = 1;
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixModuleCreateFromPTX(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                         &optixcfg->moduleCompileOptions,
+mmc_optix_utils.cpp:                                         &optixcfg->pipelineCompileOptions,
+mmc_optix_utils.cpp:                                         &optixcfg->module
+mmc_optix_utils.cpp:    optixcfg->raygenPGs.resize(1);
+mmc_optix_utils.cpp:    pgDesc.raygen.module            = optixcfg->module;
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixProgramGroupCreate(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                        &optixcfg->raygenPGs[0]
+mmc_optix_utils.cpp:    optixcfg->missPGs.resize(1);
+mmc_optix_utils.cpp:    pgDesc.raygen.module            = optixcfg->module;
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixProgramGroupCreate(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                        &optixcfg->missPGs[0]
+mmc_optix_utils.cpp:    optixcfg->hitgroupPGs.resize(1);
+mmc_optix_utils.cpp:    pgDesc.hitgroup.moduleCH            = optixcfg->module;
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixProgramGroupCreate(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                        &optixcfg->hitgroupPGs[0]
+mmc_optix_utils.cpp:    optixcfg->vertexBuffer.alloc_and_upload(tmesh->fnode, tmesh->nn);
+mmc_optix_utils.cpp:    optixcfg->indexBuffer.alloc_and_upload(smesh->face);
+mmc_optix_utils.cpp:    CUdeviceptr d_vertices = optixcfg->vertexBuffer.d_pointer();
+mmc_optix_utils.cpp:    CUdeviceptr d_indices  = optixcfg->indexBuffer.d_pointer();
+mmc_optix_utils.cpp:                (optixcfg->optixContext,
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixAccelBuild(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                optixcfg->stream,
+mmc_optix_utils.cpp:    optixcfg->asBuffer.alloc(compactedSize);
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixAccelCompact(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                  optixcfg->stream,
+mmc_optix_utils.cpp:                                  optixcfg->asBuffer.d_pointer(),
+mmc_optix_utils.cpp:                                  optixcfg->asBuffer.sizeInBytes,
+mmc_optix_utils.cpp:    for (auto pg : optixcfg->raygenPGs)
+mmc_optix_utils.cpp:    for (auto pg : optixcfg->missPGs)
+mmc_optix_utils.cpp:    for (auto pg : optixcfg->hitgroupPGs)
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixPipelineCreate(optixcfg->optixContext,
+mmc_optix_utils.cpp:                                    &optixcfg->pipelineCompileOptions,
+mmc_optix_utils.cpp:                                    &optixcfg->pipelineLinkOptions,
+mmc_optix_utils.cpp:                                    &optixcfg->pipeline
+mmc_optix_utils.cpp:    for (size_t i = 0;i < optixcfg->raygenPGs.size();i++) {
+mmc_optix_utils.cpp:      OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->raygenPGs[i],&rec));
+mmc_optix_utils.cpp:    optixcfg->raygenRecordsBuffer.alloc_and_upload(raygenRecords);
+mmc_optix_utils.cpp:    optixcfg->sbt.raygenRecord = optixcfg->raygenRecordsBuffer.d_pointer();
+mmc_optix_utils.cpp:    for (size_t i = 0;i < optixcfg->missPGs.size();i++) {
+mmc_optix_utils.cpp:      OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->missPGs[i],&rec));
+mmc_optix_utils.cpp:    optixcfg->missRecordsBuffer.alloc_and_upload(missRecords);
+mmc_optix_utils.cpp:    optixcfg->sbt.missRecordBase          = optixcfg->missRecordsBuffer.d_pointer();
+mmc_optix_utils.cpp:    optixcfg->sbt.missRecordStrideInBytes = sizeof(MissRecord);
+mmc_optix_utils.cpp:    optixcfg->sbt.missRecordCount         = (int)missRecords.size();
+mmc_optix_utils.cpp:    OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[0],&rec));
+mmc_optix_utils.cpp:            nbgashandle.push_back(optixcfg->gashandles[smesh[i].nbtype[j]]);
+mmc_optix_utils.cpp:    optixcfg->fnormBuffer.alloc_and_upload(fnorm);
+mmc_optix_utils.cpp:    optixcfg->nbgashandleBuffer.alloc_and_upload(nbgashandle);
+mmc_optix_utils.cpp:    rec.data.fnorm = (float4*)optixcfg->fnormBuffer.d_pointer();
+mmc_optix_utils.cpp:    rec.data.nbgashandle = (OptixTraversableHandle*)optixcfg->nbgashandleBuffer.d_pointer();
+mmc_optix_utils.cpp:    optixcfg->hitgroupRecordsBuffer.alloc_and_upload(hitgroupRecords);
+mmc_optix_utils.cpp:    optixcfg->sbt.hitgroupRecordBase          = optixcfg->hitgroupRecordsBuffer.d_pointer();
+mmc_optix_utils.cpp:    optixcfg->sbt.hitgroupRecordStrideInBytes = sizeof(HitgroupRecord);
+mmc_optix_utils.cpp:    optixcfg->sbt.hitgroupRecordCount         = (int)hitgroupRecords.size();
+mmc_optix_utils.cpp:    optixcfg->raygenRecordsBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->missRecordsBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->hitgroupRecordsBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->launchParamsBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->vertexBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->indexBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->fnormBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->nbgashandleBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->asBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->seedBuffer.free();
+mmc_optix_utils.cpp:    optixcfg->outputBuffer.free();
+mmc_optix_utils.cpp:    free(optixcfg->outputHostBuffer);
+mmc_cl_host.c:    cl_uint meshlen = ((cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : mesh->ne) << cfg->nbuffer; // use 4 copies to reduce racing
+mmc_cl_host.c:    cfg->crop0.w = meshlen * cfg->maxgate; // offset for the second buffer
+mmc_cl_host.c:    cl_uint detreclen = (2 + ((cfg->ismomentum) > 0)) * mesh->prop + (cfg->issaveexit > 0) * 6 + 1;
+mmc_cl_host.c:    MCXParam param = {{{cfg->srcpos.x, cfg->srcpos.y, cfg->srcpos.z}}, {{cfg->srcdir.x, cfg->srcdir.y, cfg->srcdir.z}},
+mmc_cl_host.c:        cfg->tstart, cfg->tend, (uint)cfg->isreflect, (uint)cfg->issavedet, (uint)cfg->issaveexit,
+mmc_cl_host.c:        (uint)cfg->ismomentum, (uint)cfg->isatomic, (uint)cfg->isspecular, 1.f / cfg->tstep, cfg->minenergy,
+mmc_cl_host.c:        cfg->maxdetphoton, mesh->prop, cfg->detnum, (uint)cfg->voidtime, (uint)cfg->srctype,
+mmc_cl_host.c:        {{cfg->srcparam1.x, cfg->srcparam1.y, cfg->srcparam1.z, cfg->srcparam1.w}},
+mmc_cl_host.c:        {{cfg->srcparam2.x, cfg->srcparam2.y, cfg->srcparam2.z, cfg->srcparam2.w}},
+mmc_cl_host.c:        cfg->issaveref, cfg->maxgate, (uint)cfg->debuglevel, detreclen, cfg->outputtype, mesh->elemlen,
+mmc_cl_host.c:        cfg->mcmethod, cfg->method, 1.f / cfg->steps.x,
+mmc_cl_host.c:        cfg->srcdir.w,
+mmc_cl_host.c:        mesh->nn, mesh->ne, mesh->nf, {{mesh->nmin.x, mesh->nmin.y, mesh->nmin.z}}, cfg->nout,
+mmc_cl_host.c:        cfg->roulettesize, cfg->srcnum, {{cfg->crop0.x, cfg->crop0.y, cfg->crop0.z, cfg->crop0.w}},
+mmc_cl_host.c:        mesh->srcelemlen, {{cfg->bary0.x, cfg->bary0.y, cfg->bary0.z, cfg->bary0.w}},
+mmc_cl_host.c:        cfg->e0, cfg->isextdet, meshlen, cfg->nbuffer, (mesh->prop + 1 + cfg->isextdet) + cfg->detnum,
+mmc_cl_host.c:        cfg->issaveseed, cfg->seed
+mmc_cl_host.c:        cfg->debuglevel = cfg->debuglevel & (~MCX_DEBUG_PROGRESS);
+mmc_cl_host.c:        if (!cfg->autopilot) {
+mmc_cl_host.c:            gpu[i].autothread = cfg->nthread;
+mmc_cl_host.c:            gpu[i].autoblock = cfg->nblocksize;
+mmc_cl_host.c:            gpu[i].maxgate = cfg->maxgate;
+mmc_cl_host.c:            int needmem = meshlen + gpu[i].autothread * sizeof(float4) * 4 + sizeof(float) * cfg->maxdetphoton * hostdetreclen + 10 * 1024 * 1024; /*keep 10M for other things*/
+mmc_cl_host.c:            gpu[i].maxgate = MIN(((cfg->tend - cfg->tstart) / cfg->tstep + 0.5), gpu[i].maxgate);
+mmc_cl_host.c:    cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
+mmc_cl_host.c:    param.maxgate = cfg->maxgate;
+mmc_cl_host.c:    cl_uint nflen = mesh->nf * cfg->maxgate;
+mmc_cl_host.c:        fullload += cfg->workload[i];
+mmc_cl_host.c:            cfg->workload[i] = gpu[i].core;
+mmc_cl_host.c:    field = (cl_float*)calloc(sizeof(cl_float) * meshlen * 2, cfg->maxgate);
+mmc_cl_host.c:    dref = (cl_float*)calloc(sizeof(cl_float) * mesh->nf, cfg->maxgate);
+mmc_cl_host.c:    Pdet = (float*)calloc(cfg->maxdetphoton * sizeof(float), hostdetreclen);
+mmc_cl_host.c:    if (cfg->issaveseed) {
+mmc_cl_host.c:        Pphotonseed = (RandType*)calloc(cfg->maxdetphoton, (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cl_host.c:    fieldlen = meshlen * cfg->maxgate;
+mmc_cl_host.c:    if (cfg->seed > 0) {
+mmc_cl_host.c:        srand(cfg->seed);
+mmc_cl_host.c:    memcpy(propdet, mesh->med, (mesh->prop + 1 + cfg->isextdet)*sizeof(medium));
+mmc_cl_host.c:    if (cfg->detpos && cfg->detnum) {
+mmc_cl_host.c:        memcpy(propdet + (mesh->prop + 1 + cfg->isextdet), cfg->detpos, cfg->detnum * sizeof(float4));
+mmc_cl_host.c:        OCL_ASSERT(((gdetphoton[i] = clCreateBuffer(mcxcontext, RW_MEM, sizeof(float) * cfg->maxdetphoton * hostdetreclen, Pdet, &status), status)));
+mmc_cl_host.c:        if (cfg->issaveseed) {
+mmc_cl_host.c:            OCL_ASSERT(((gphotonseed[i] = clCreateBuffer(mcxcontext, RW_MEM, cfg->maxdetphoton * (sizeof(RandType) * RAND_BUF_LEN), Pphotonseed, &status), status)));
+mmc_cl_host.c:        if (cfg->srctype == MCX_SRC_PATTERN) {
+mmc_cl_host.c:            OCL_ASSERT(((gsrcpattern[i] = clCreateBuffer(mcxcontext, RO_MEM, sizeof(float) * (int)(cfg->srcparam1.w * cfg->srcparam2.w), cfg->srcpattern, &status), status)));
+mmc_cl_host.c:        } else if (cfg->srctype == MCX_SRC_PATTERN3D) {
+mmc_cl_host.c:            OCL_ASSERT(((gsrcpattern[i] = clCreateBuffer(mcxcontext, RO_MEM, sizeof(float) * (int)(cfg->srcparam1.x * cfg->srcparam1.y * cfg->srcparam1.z), cfg->srcpattern, &status), status)));
+mmc_cl_host.c:        if (cfg->seed == SEED_FROM_FILE) {
+mmc_cl_host.c:            OCL_ASSERT(((greplayweight[i] = clCreateBuffer(mcxcontext, RO_MEM, sizeof(float) * cfg->nphoton, cfg->replayweight, &status), status)));
+mmc_cl_host.c:            OCL_ASSERT(((greplaytime[i] = clCreateBuffer(mcxcontext, RO_MEM, sizeof(float) * cfg->nphoton, cfg->replaytime, &status), status)));
+mmc_cl_host.c:            OCL_ASSERT(((greplayseed[i] = clCreateBuffer(mcxcontext, RO_MEM, (sizeof(RandType) * RAND_BUF_LEN) * cfg->nphoton, cfg->photonseed, &status), status)));
+mmc_cl_host.c:    if (cfg->issavedet) {
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "- variant name: [%s] compiled with OpenCL version [%d]\n",
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "- code name: [MMC-OpenCL] compiled with OpenCL version [%d]\n",
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "- compiled with: [RNG] %s [Seed Length] %d\n", MCX_RNG_NAME, RAND_SEED_WORD_LEN);
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "initializing streams ...\t");
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "init complete : %d ms\n", GetTimeMillis() - tic);
+mmc_cl_host.c:    fflush(cfg->flog);
+mmc_cl_host.c:    OCL_ASSERT(((mcxprogram = clCreateProgramWithSource(mcxcontext, 1, (const char**) & (cfg->clsource), NULL, &status), status)));
+mmc_cl_host.c:    if (cfg->optlevel >= 1) {
+mmc_cl_host.c:    if (cfg->optlevel >= 3) {
+mmc_cl_host.c:    if (cfg->optlevel >= 4) {
+mmc_cl_host.c:    if ((uint)cfg->srctype < sizeof(sourceflag) / sizeof(sourceflag[0])) {
+mmc_cl_host.c:        sprintf(opt + strlen(opt), "%s ", sourceflag[(uint)cfg->srctype]);
+mmc_cl_host.c:    sprintf(opt + strlen(opt), "%s ", cfg->compileropt);
+mmc_cl_host.c:    if (cfg->isatomic) {
+mmc_cl_host.c:    if (cfg->issave2pt == 0) {
+mmc_cl_host.c:    if (cfg->issavedet) {
+mmc_cl_host.c:    if (cfg->issaveref) {
+mmc_cl_host.c:    if (cfg->issaveseed) {
+mmc_cl_host.c:    if (cfg->isreflect) {
+mmc_cl_host.c:    if (cfg->method == rtBLBadouelGrid) {
+mmc_cl_host.c:    if (cfg->method == rtBLBadouel) {
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "Building kernel with option: %s\n", opt);
+mmc_cl_host.c:                MMC_FPRINTF(cfg->flog, "Kernel build log:\n%s\n", msg);
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "build program complete : %d ms\n", GetTimeMillis() - tic);
+mmc_cl_host.c:    fflush(cfg->flog);
+mmc_cl_host.c:        threadphoton = (int)(cfg->nphoton * cfg->workload[i] / (fullload * gpu[i].autothread * cfg->respin));
+mmc_cl_host.c:        oddphotons = (int)(cfg->nphoton * cfg->workload[i] / (fullload * cfg->respin) - threadphoton * gpu[i].autothread);
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "- [device %d(%d): %s] threadph=%d oddphotons=%d np=%.1f nthread=%d nblock=%d repetition=%d\n", i, gpu[i].id, gpu[i].name, threadphoton, oddphotons,
+mmc_cl_host.c:                    cfg->nphoton * cfg->workload[i] / fullload, (int)gpu[i].autothread, (int)gpu[i].autoblock, cfg->respin);
+mmc_cl_host.c:        OCL_ASSERT((clSetKernelArg(mcxkernel[i], 3, cfg->issavedet ? sizeof(cl_float) * ((int)gpu[i].autoblock)*detreclen : sizeof(int), NULL)));
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "set kernel arguments complete : %d ms %d\n", GetTimeMillis() - tic, param.method);
+mmc_cl_host.c:    fflush(cfg->flog);
+mmc_cl_host.c:    if (cfg->exportfield == NULL) {
+mmc_cl_host.c:        cfg->exportfield = mesh->weight;
+mmc_cl_host.c:    if (cfg->exportdetected == NULL) {
+mmc_cl_host.c:        cfg->exportdetected = (float*)malloc(hostdetreclen * cfg->maxdetphoton * sizeof(float));
+mmc_cl_host.c:    if (cfg->issaveseed && cfg->exportseed == NULL) {
+mmc_cl_host.c:        cfg->exportseed = (unsigned char*)malloc(cfg->maxdetphoton * (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cl_host.c:    cfg->energytot = 0.f;
+mmc_cl_host.c:    cfg->energyesc = 0.f;
+mmc_cl_host.c:    cfg->runtime = 0;
+mmc_cl_host.c:    for (t = cfg->tstart; t < cfg->tend; t += cfg->tstep * cfg->maxgate) {
+mmc_cl_host.c:        twindow1 = t + cfg->tstep * cfg->maxgate;
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "lauching mcx_main_loop for time window [%.1fns %.1fns] ...\n"
+mmc_cl_host.c:        fflush(cfg->flog);
+mmc_cl_host.c:        for (iter = 0; iter < cfg->respin; iter++) {
+mmc_cl_host.c:            MMC_FPRINTF(cfg->flog, "simulation run#%2d ... \n", iter + 1);
+mmc_cl_host.c:            fflush(cfg->flog);
+mmc_cl_host.c:            fflush(cfg->flog);
+mmc_cl_host.c:            if ((cfg->debuglevel & MCX_DEBUG_PROGRESS)) {
+mmc_cl_host.c:                progressfun(cfg->nphoton, handle);
+mmc_cl_host.c:                MMC_FPRINTF(cfg->flog, "\n");
+mmc_cl_host.c:            MMC_FPRINTF(cfg->flog, "kernel complete:  \t%d ms\nretrieving flux ... \t", tic1 - tic);
+mmc_cl_host.c:            fflush(cfg->flog);
+mmc_cl_host.c:            if (cfg->runtime < tic1 - tic) {
+mmc_cl_host.c:                cfg->runtime = tic1 - tic;
+mmc_cl_host.c:                if (cfg->issavedet) {
+mmc_cl_host.c:                    OCL_ASSERT((clEnqueueReadBuffer(mcxqueue[devid], gdetphoton[devid], CL_TRUE, 0, sizeof(float)*cfg->maxdetphoton * hostdetreclen,
+mmc_cl_host.c:                    if (cfg->issaveseed) {
+mmc_cl_host.c:                        OCL_ASSERT((clEnqueueReadBuffer(mcxqueue[devid], gphotonseed[devid], CL_TRUE, 0, cfg->maxdetphoton * (sizeof(RandType)*RAND_BUF_LEN),
+mmc_cl_host.c:                    if (detected > cfg->maxdetphoton) {
+mmc_cl_host.c:                        MMC_FPRINTF(cfg->flog, "WARNING: the detected photon (%d) \
+mmc_cl_host.c:                                    , detected, cfg->maxdetphoton);
+mmc_cl_host.c:                        MMC_FPRINTF(cfg->flog, "detected %d photons, total: %d\t", detected, cfg->detectedcount + detected);
+mmc_cl_host.c:                    cfg->his.detected += detected;
+mmc_cl_host.c:                    detected = MIN(detected, cfg->maxdetphoton);
+mmc_cl_host.c:                    if (cfg->exportdetected) {
+mmc_cl_host.c:                        cfg->exportdetected = (float*)realloc(cfg->exportdetected, (cfg->detectedcount + detected) * hostdetreclen * sizeof(float));
+mmc_cl_host.c:                        memcpy(cfg->exportdetected + cfg->detectedcount * (hostdetreclen), Pdet, detected * (hostdetreclen)*sizeof(float));
+mmc_cl_host.c:                        if (cfg->issaveseed) {
+mmc_cl_host.c:                            cfg->exportseed = (unsigned char*)realloc(cfg->exportseed, (cfg->detectedcount + detected) * (sizeof(RandType) * RAND_BUF_LEN));
+mmc_cl_host.c:                            memcpy(cfg->exportseed + cfg->detectedcount * sizeof(RandType)*RAND_BUF_LEN, Pphotonseed, detected * (sizeof(RandType)*RAND_BUF_LEN));
+mmc_cl_host.c:                        cfg->detectedcount += detected;
+mmc_cl_host.c:                if (cfg->issaveref) {
+mmc_cl_host.c:                if (cfg->issave2pt) {
+mmc_cl_host.c:                    MMC_FPRINTF(cfg->flog, "transfer complete:        %d ms\n", GetTimeMillis() - tic);
+mmc_cl_host.c:                    fflush(cfg->flog);
+mmc_cl_host.c:                        field[(i >> cfg->nbuffer)] += rawfield[i] + rawfield[i + fieldlen];    //+rawfield[i+fieldlen];
+mmc_cl_host.c:                    /*          if(cfg->respin>1){
+mmc_cl_host.c:                                if(iter+1==cfg->respin){
+mmc_cl_host.c:                                        if(cfg->respin>1)  //copy the accumulated fields back
+mmc_cl_host.c:                        cfg->energyesc += energy[(i << 1)];
+mmc_cl_host.c:                        cfg->energytot += energy[(i << 1) + 1];
+mmc_cl_host.c:                if (cfg->respin > 1 && RAND_SEED_WORD_LEN > 1) {
+mmc_cl_host.c:    fieldlen = (fieldlen >> cfg->nbuffer);
+mmc_cl_host.c:    if (cfg->exportfield) {
+mmc_cl_host.c:        if (cfg->basisorder == 0 || cfg->method == rtBLBadouelGrid) {
+mmc_cl_host.c:                cfg->exportfield[i] += field[i];
+mmc_cl_host.c:            for (i = 0; i < cfg->maxgate; i++)
+mmc_cl_host.c:                        cfg->exportfield[i * mesh->nn + mesh->elem[j * mesh->elemlen + k] - 1] += ww;
+mmc_cl_host.c:    if (cfg->issaveref && mesh->dref) {
+mmc_cl_host.c:    if (cfg->isnormalized) {
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "normalizing raw data ...\t");
+mmc_cl_host.c:        fflush(cfg->flog);
+mmc_cl_host.c:        cfg->energyabs = cfg->energytot - cfg->energyesc;
+mmc_cl_host.c:        mesh_normalize(mesh, cfg, cfg->energyabs, cfg->energytot, 0);
+mmc_cl_host.c:    if (cfg->issave2pt && cfg->parentid == mpStandalone) {
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "saving data to file ...\t");
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "saving data complete : %d ms\n\n", GetTimeMillis() - tic);
+mmc_cl_host.c:        fflush(cfg->flog);
+mmc_cl_host.c:    if (cfg->issavedet && cfg->parentid == mpStandalone && cfg->exportdetected) {
+mmc_cl_host.c:        cfg->his.unitinmm = cfg->unitinmm;
+mmc_cl_host.c:        cfg->his.savedphoton = cfg->detectedcount;
+mmc_cl_host.c:        cfg->his.detected = cfg->detectedcount;
+mmc_cl_host.c:        mesh_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount, (sizeof(RandType)*RAND_BUF_LEN), cfg);
+mmc_cl_host.c:    if (cfg->issaveref) {
+mmc_cl_host.c:        MMC_FPRINTF(cfg->flog, "saving surface diffuse reflectance ...");
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "simulated %zu photons (%zu) with %d devices (ray-tet %.0f)\nMCX simulation speed: %.2f photon/ms\n",
+mmc_cl_host.c:                cfg->nphoton, cfg->nphoton, workdev, reporter.raytet, (double)cfg->nphoton / toc);
+mmc_cl_host.c:    MMC_FPRINTF(cfg->flog, "total simulated energy: %.2f\tabsorbed: %5.5f%%\n(loss due to initial specular reflection is excluded in the total)\n",
+mmc_cl_host.c:                cfg->energytot, (cfg->energytot - cfg->energyesc) / cfg->energytot * 100.f);
+mmc_cl_host.c:    fflush(cfg->flog);
+mmc_host.c:    if (cfg->isgpuinfo == 0) {
+mmc_host.c:    tracer_init(tracer, mesh, cfg->method);
+mmc_host.c:    tracer_init(tracer, mesh, cfg->method);
+mmc_host.c:        cfg->debuglevel = cfg->debuglevel & (~dlProgress);
+mmc_host.c:    cfg->issaveseed = 0;
+mmc_host.c:    MMCDEBUG(cfg, dlTime, (cfg->flog, "seed=%u\nsimulating ... \n", cfg->seed));
+mmc_host.c:    if (cfg->debugphoton >= 0) {
+mmc_host.c:        debuglevel = cfg->debuglevel;
+mmc_host.c:        cfg->debuglevel &= 0xFFFFEA00;
+mmc_host.c:        visitor visit = {0.f, 0.f, 1.f / cfg->tstep, DET_PHOTON_BUF, 0, 0, NULL, NULL, NULL, NULL, NULL, NULL};
+mmc_host.c:            srand(cfg->seed);
+mmc_host.c:        visit.reclen = (2 + ((cfg->ismomentum) > 0)) * mesh->prop + (cfg->issaveexit > 0) * 6 + 2;
+mmc_host.c:        if (cfg->issavedet) {
+mmc_host.c:            if (cfg->issaveseed) {
+mmc_host.c:        if ((cfg->debuglevel & dlProgress) && threadid == 0) {
+mmc_host.c:        for (id = 0; id < cfg->nphoton; id++) {
+mmc_host.c:            if (id == cfg->debugphoton) {
+mmc_host.c:                cfg->debuglevel = debuglevel;
+mmc_host.c:            if (cfg->seed == SEED_FROM_FILE) {
+mmc_host.c:                onephoton(id, tracer, mesh, cfg, ((RandType*)cfg->photonseed) + id * RAND_BUF_LEN, ran1, &visit);
+mmc_host.c:            if (id == cfg->debugphoton) {
+mmc_host.c:                cfg->debuglevel &= 0xFFFFEA00;
+mmc_host.c:            if ((cfg->debuglevel & dlProgress) && threadid == 0) {
+mmc_host.c:                progressfun((float)ncomplete / cfg->nphoton, handle);
+mmc_host.c:        for (j = 0; j < cfg->srcnum; j++) {
+mmc_host.c:        if (cfg->issavedet) {
+mmc_host.c:                if (cfg->issaveseed) {
+mmc_host.c:                if (cfg->issaveseed)
+mmc_host.c:        if (cfg->issaveseed && visit.photonseed) {
+mmc_host.c:    if ((cfg->debuglevel & dlProgress)) {
+mmc_host.c:    MMCDEBUG(cfg, dlProgress, (cfg->flog, "\n"));
+mmc_host.c:    MMCDEBUG(cfg, dlTime, (cfg->flog, "\tdone\t%d\n", dt));
+mmc_host.c:    MMCDEBUG(cfg, dlTime, (cfg->flog, "speed ...\t"S_BOLD""S_BLUE"%.2f photon/ms"S_RESET", %.0f ray-tetrahedron tests (%.0f overhead, %.2f test/ms)\n", (double)cfg->nphoton / dt, raytri, raytri0, raytri / dt));
+mmc_host.c:    if (cfg->issavedet) {
+mmc_host.c:        MMC_FPRINTF(cfg->flog, "detected %d photons\n", master.detcount);
+mmc_host.c:    if (cfg->isnormalized) {
+mmc_host.c:        for (j = 0; j < cfg->srcnum; j++) {
+mmc_host.c:            MMCDEBUG(cfg, dlTime, (cfg->flog, "source %d\ttotal simulated energy: %f\tabsorbed: "S_BOLD""S_BLUE"%5.5f%%"S_RESET"\tnormalizor=%g\n",
+mmc_host.c:        cfg->his.normalizer = sum_normalizer / cfg->srcnum; // average normalizer value for all simulated sources
+mmc_host.c:    if (cfg->issave2pt) {
+mmc_host.c:        switch (cfg->outputtype) {
+mmc_host.c:                MMCDEBUG(cfg, dlTime, (cfg->flog, "saving flux ..."));
+mmc_host.c:                MMCDEBUG(cfg, dlTime, (cfg->flog, "saving fluence ..."));
+mmc_host.c:                MMCDEBUG(cfg, dlTime, (cfg->flog, "saving energy deposit ..."));
+mmc_host.c:    if (cfg->issavedet) {
+mmc_host.c:        MMCDEBUG(cfg, dlTime, (cfg->flog, "saving detected photons ..."));
+mmc_host.c:        if (cfg->issaveexit) {
+mmc_host.c:        if (cfg->issaveexit == 2) {
+mmc_host.c:            float* detimage = (float*)calloc(cfg->detparam1.w * cfg->detparam2.w * cfg->maxgate, sizeof(float));
+mmc_host.c:        if (cfg->issaveseed && master.photonseed) {
+mmc_host.c:            cfg->exportseed = (unsigned char*)malloc(cfg->detectedcount * sizeof(RandType) * RAND_BUF_LEN);
+mmc_host.c:            memcpy(cfg->exportseed, master.photonseed, cfg->detectedcount * sizeof(RandType)*RAND_BUF_LEN);
+mmc_host.c:    if (cfg->issaveref) {
+mmc_host.c:        MMCDEBUG(cfg, dlTime, (cfg->flog, "saving surface diffuse reflectance ..."));
+mmc_host.c:    MMCDEBUG(cfg, dlTime, (cfg->flog, "\tdone\t%d\n", GetTimeMillis() - t0));
+mmc_highorder.cpp:    mesh->weight = (double*)realloc((void*)mesh->weight, sizeof(double) * mesh->nn * cfg->maxgate);
+mmc_highorder.cpp:    memset(mesh->weight, 0, sizeof(double)*mesh->nn * cfg->maxgate); // if mesh->weight is filled, need to allocate a new buffer, and copy the old buffer gate by gate

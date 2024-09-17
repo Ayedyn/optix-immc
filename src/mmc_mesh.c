@@ -1538,9 +1538,12 @@ float mesh_normalize(tetmesh* mesh, mcconfig* cfg, float Eabsorb, float Etotal, 
         return normalizor;
     }
 
+    // This is run whenever fluence or flux is chosen and type is badouel
     if (cfg->method == rtBLBadouelGrid) {
         normalizor = 1.0 / (Etotal * cfg->unitinmm * cfg->unitinmm * cfg->unitinmm); /*scaling factor*/
-    } else {
+    } 
+    // This is run whenever fluence or flux is the chosen output:
+    else {
         if (cfg->basisorder) {
             for (i = 0; i < cfg->maxgate; i++)
                 for (j = 0; j < datalen; j++)
@@ -1583,6 +1586,9 @@ float mesh_normalize(tetmesh* mesh, mcconfig* cfg, float Eabsorb, float Etotal, 
         normalizor /= cfg->tstep;
     }
 
+    // This always runs in order to use the normalizer to normalize data
+    // mesh->weight is an linearized array to hold all photon voxels/tetrahedrons
+    // in the domain at all times
     for (i = 0; i < cfg->maxgate; i++)
         for (j = 0; j < datalen; j++) {
             mesh->weight[(i * datalen + j)*cfg->srcnum + pair] *= normalizor;

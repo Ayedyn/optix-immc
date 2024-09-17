@@ -1,0 +1,39 @@
+clear cfg
+
+%% create surface mesh
+[no,el]=meshgrid6(0:60:60,0:60:60,0:60:60);
+fc=volface(el);
+
+%[no_sphere,fc_sphere]=meshasphere([30 30 30],25,3);
+%[no,fc]=mergemesh(no_box,fc_box,no_sphere,fc_sphere);
+
+%% create volume mesh
+ISO2MESH_TETGENOPT='-Y -A';
+[cfg.node,cfg.elem]=surf2mesh(no,fc,[0 0 0],[60 60 60],1.0,100,...
+    [30,30,30]);
+
+%% set up cfg
+cfg.nphoton=1e8;
+
+cfg.srcpos=[30 30 0.01];
+cfg.srcdir=[0 0 1];
+
+cfg.prop=[0.000,  0, 1, 1;
+          0.005,  1, 0, 1.37];%box
+
+% time-gate
+cfg.tstart=0;
+cfg.tend=5e-9;
+cfg.tstep=5e-9;
+
+% dual grid MC
+cfg.method='grid';
+
+% output energy deposition
+cfg.outputtype='fluence';
+
+% gpu setting
+cfg.gpuid=1;
+
+% save configuration
+mmc2json(cfg, 'optix');

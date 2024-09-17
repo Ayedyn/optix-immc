@@ -7,6 +7,7 @@
 #include <optix_types.h>
 #include <sutil/vec_math.h>
 
+#include "implicit_capsule.h"
 #include "mmc_optix_ray.h"
 #include "mmc_optix_launchparam.h"
 
@@ -128,6 +129,65 @@ __device__ __forceinline__ uint getTimeFrame(const float &tof) {
     return min(((int)((tof - gcfg.tstart) * gcfg.Rtstep)),
         gcfg.maxgate - 1) * gcfg.crop0.z;
 }
+
+/**
+ * @brief Get the coordinates and width of a capsule
+ **/
+__device__ __forceinline__ immc::ImplicitCapsule& getCapsuleFromID(int id){
+	return ((immc::ImplicitCapsule*)gcfg.capsuleData)[id];
+}
+
+// tests intersection of ray with a sphere and returns intersections as floats of distance from     start of ray
+// geometric solution taken from: scratchapixel.com/lessons/3d-basic-rendering/minimal-ray-trac    er-rendering-simple-shapes/ray-sphere-intersection.html 
+__device__ __forceinline__ float2 get_sphere_intersections(const float3 center, 
+		const float width, const float3 ray_origin, const float3 ray_dir){
+
+        float3 L = center - ray_origin;
+        float tca = dot(L, ray_dir);
+
+        float d2 = dot(L, L) - tca*tca;
+        // result if no intersections, set both to negatives
+        if(d2 > width*width){
+                float2 hitTs = make_float2(-1,-1);
+                return hitTs;
+        }
+        // calculates both intersections
+        float thc = sqrt(width*width -d2);
+        float2 hitTs;
+        hitTs.x = tca-thc;
+        hitTs.y = tca+thc;
+        return hitTs;
+}
+
+// tests intersection of ray with an infinite cylinder (derived from parametric substitution)
+// from davidjcobb.github.io/articles/ray-cylinder-intersection
+// solve a quadratic equation of at^2+bt+c = 0 for t
+__device__ __forceinline__ float2 get_inf_cyl_intersections(const float3 vertex1, const float3     vertex2, const float width, const float3 ray_origin, const float3 ray_dir){
+         float3 R1 = ray_origin - vertex2;
+         float3 Cs = vertex1-vertex2;
+         float  Ch = length(Cs);
+         float3 Ca = Cs/Ch;
+ 
+         float Ca_dot_Rd = dot(Ca, ray_dir);
+         float Ca_dot_R1 = dot(Ca, R1);
+         float R1_dot_R1 = dot(R1, R1);
+ 
+         float a = 1 - (Ca_dot_Rd * Ca_dot_Rd);
+         float b = 2 * (dot(ray_dir, R1) - Ca_dot_Rd * Ca_dot_R1);
+         float c = R1_dot_R1 - Ca_dot_R1 * Ca_dot_R1 - (width * width);
+ 
+         float2 cyl_hits;
+         float discriminant = b*b-4.0f*a*c;
+         if(discriminant<0){
+                 cyl_hits.x = -1;
+                 cyl_hits.y = -1;
+                 return cyl_hits;
+         }
+ 
+         cyl_hits.x = (-b-sqrt(discriminant))/(2*a);
+         cyl_hits.y = (-b+sqrt(discriminant))/(2*a);
+         return cyl_hits;
+ }
 
 /**
  * @brief Save output to a buffer
@@ -357,3 +417,92 @@ extern "C" __global__ void __miss__ms() {
     // update ray
     setRay(r);
 }
+
+
+// intersection test for capsule primitives
+extern "C" __global__ void __intersection__customlinearcapsule(){
+        // 1. initialize variables for geometry
+        int primIdx = optixGetPrimitiveIndex();
+        unsigned int capsuleIdx;
+        
+        float width_offset = 0;
+        if (primIdx >= gcfg.num_inside_prims) {
+                capsuleIdx = primIdx - gcfg.num_inside_prims;
+                width_offset = gcfg.WIDTH_ADJ;
+        } else {
+                capsuleIdx = primIdx;
+        }
+
+        const immc::ImplicitCapsule& capsule = getCapsuleFromID(capsuleIdx);
+        
+        // vector going from pt2 to pt1:
+        float3 lineseg_AB = capsule.vertex1-capsule.vertex2;
+        float width = capsule.width + width_offset;
+        float t_min = optixGetRayTmin();
+        float t_max = optixGetRayTmax();
+        // get normalized ray direction
+        float3 ray_dir = normalize(optixGetWorldRayDirection());
+        float3 ray_origin = optixGetWorldRayOrigin();
+
+        // test for intersections with sphere 1:
+        float2 sphere_one_hits = get_sphere_intersections(capsule.vertex1, width, 
+			ray_origin, ray_dir);
+        
+        // get coordinates for intersections
+        float3 sphere_one_hit_one = ray_origin + ray_dir * sphere_one_hits.x;
+        float3 sphere_one_hit_two = ray_origin + ray_dir * sphere_one_hits.y;
+
+        // discard intersections on interior side of sphere 1:
+        // (discard if negative when taking dot product with vector AB)
+        if(dot(sphere_one_hit_one-capsule.vertex1, lineseg_AB)<0){
+                sphere_one_hits.x = -1;
+        }
+        if(dot(sphere_one_hit_two-capsule.vertex1, lineseg_AB)<0){
+                sphere_one_hits.y = -1;
+        }
+        optixReportIntersection(sphere_one_hits.x, 1);
+        optixReportIntersection(sphere_one_hits.y, 1);     
+
+        // test for intersections with sphere 2:
+        float2 sphere_two_hits = get_sphere_intersections(capsule.vertex2, width, 
+		ray_origin, ray_dir);
+        // get coordinates for intersections
+        float3 sphere_two_hit_one = ray_origin + (ray_dir * sphere_two_hits.x);
+        float3 sphere_two_hit_two = ray_origin + (ray_dir * sphere_two_hits.y);
+
+        // discard intersections on interior side of sphere 2:
+        if(dot(capsule.vertex2-sphere_two_hit_one, lineseg_AB)<0){
+                sphere_two_hits.x = -1;
+        }
+        if(dot(capsule.vertex2-sphere_two_hit_two, lineseg_AB)<0){
+                sphere_two_hits.y = -1;
+        }
+        optixReportIntersection(sphere_two_hits.x, 2);
+        optixReportIntersection(sphere_two_hits.y, 2);
+
+        // test for intersections with infinite cylinder:
+        float2 cyl_hits = get_inf_cyl_intersections(capsule.vertex1, capsule.vertex2, width, 
+			ray_origin, ray_dir);
+        
+        // discard intersections on exterior of cylinder:
+        float3 cyl_hit_one = ray_origin + ray_dir * cyl_hits.x;
+        float3 cyl_hit_two = ray_origin + ray_dir * cyl_hits.y;
+        if(dot(cyl_hit_one-capsule.vertex1, lineseg_AB)>0 || 
+        dot(cyl_hit_one-capsule.vertex2, lineseg_AB)<0){
+                cyl_hits.x = -1;
+        }
+
+        if(dot(cyl_hit_two-capsule.vertex1, lineseg_AB)>0 || 
+        dot(cyl_hit_two-capsule.vertex2, lineseg_AB)<0){
+                cyl_hits.y = -1;
+        }
+
+        optixReportIntersection(cyl_hits.x, 3);
+        optixReportIntersection(cyl_hits.y, 3);
+
+        return;
+
+}
+
+
+

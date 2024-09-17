@@ -21,6 +21,7 @@ typedef struct __attribute__((aligned(16))) MMC_Parameter {
 
     CUdeviceptr seedbuffer;             /**< rng seed for each thread */
     CUdeviceptr outputbuffer;
+    CUdeviceptr capsuleData;           // this points to a device buffer with immc capsules
 
     float3 srcpos;
     float3 srcdir;
@@ -30,6 +31,11 @@ typedef struct __attribute__((aligned(16))) MMC_Parameter {
     float dstep;
     float tstart, tend;
     float Rtstep;
+    
+    // variables for implicit tracing:
+    float WIDTH_ADJ;
+    unsigned int num_inside_prims; 
+
     int maxgate;
     unsigned int mediumid0;             /**< initial medium type */
 
