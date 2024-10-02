@@ -728,6 +728,7 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
 void mmc_run_cu(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, void (*progressfun)(float, void*), void* handle) {
     GPUInfo* gpuinfo = NULL;      /** gpuinfo: structure to store GPU information */
     unsigned int activedev = 0;   /** activedev: count of total active GPUs to be used */
+
     if (!(activedev = mcx_list_cu_gpu(cfg, &gpuinfo))) {
         mcx_error(-1, "No GPU device found\n", __FILE__, __LINE__);
     }

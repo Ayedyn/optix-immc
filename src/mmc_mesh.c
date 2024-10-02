@@ -776,22 +776,27 @@ void mesh_clear(tetmesh* mesh) {
         free(mesh->faceroi);
         mesh->faceroi = NULL;
     }
+
     if (mesh->fnode) {
         free(mesh->fnode);
         mesh->fnode = NULL;
     }
+
     if (mesh->fnorm) {
         free(mesh->fnorm);
         mesh->fnorm = NULL;
     }
+
     if (mesh->face) {
         free(mesh->face);
         mesh->face = NULL;
     }
+
     if (mesh->front) {
         free(mesh->front);
         mesh->front = NULL;
     }
+
     if (mesh->back) {
         free(mesh->back);
         mesh->back = NULL;
@@ -835,13 +840,14 @@ void tracer_prep(raytracer* tracer, mcconfig* cfg) {
     int i, j, ne = tracer->mesh->ne;
 
     if (cfg->compute == cbOptiX) {
-        tetmesh *pmesh = tracer->mesh;
-        int *fnb = (int*)malloc(pmesh->ne * pmesh->elemlen * sizeof(int));
+        tetmesh* pmesh = tracer->mesh;
+        int* fnb = (int*)malloc(pmesh->ne * pmesh->elemlen * sizeof(int));
         memcpy(fnb, tracer->mesh->facenb, (pmesh->ne * pmesh->elemlen) * sizeof(int));
 
         // copy node from a float4 array into a float3 array
         pmesh->fnode = (float3*)malloc(pmesh->nn * sizeof(float3));
-        for(int i = 0; i < pmesh->nn; ++i){
+
+        for (int i = 0; i < pmesh->nn; ++i) {
             pmesh->fnode[i].x = pmesh->node[i].x;
             pmesh->fnode[i].y = pmesh->node[i].y;
             pmesh->fnode[i].z = pmesh->node[i].z;
@@ -854,10 +860,12 @@ void tracer_prep(raytracer* tracer, mcconfig* cfg) {
         pmesh->front = (uint*)malloc((pmesh->ne * pmesh->elemlen) * sizeof(uint));
         pmesh->back = (uint*)malloc((pmesh->ne * pmesh->elemlen) * sizeof(uint));
         float3 v0, v1, v2, vec01, vec02, vnorm;
-        for(int i = 0; i < pmesh->ne; ++i){
-            for(int j = 0; j < pmesh->elemlen; ++j){
+
+        for (int i = 0; i < pmesh->ne; ++i) {
+            for (int j = 0; j < pmesh->elemlen; ++j) {
                 int nexteid = fnb[(i * pmesh->elemlen) + j];
-                if((nexteid > 0 && pmesh->type[nexteid - 1] != pmesh->type[i]) || nexteid == 0) {
+
+                if ((nexteid > 0 && pmesh->type[nexteid - 1] != pmesh->type[i]) || nexteid == 0) {
                     // face node
                     pmesh->face[pmesh->nface].x = pmesh->elem[(i * pmesh->elemlen) + out[ifaceorder[j]][0]] - 1;
                     pmesh->face[pmesh->nface].y = pmesh->elem[(i * pmesh->elemlen) + out[ifaceorder[j]][1]] - 1;
@@ -876,24 +884,29 @@ void tracer_prep(raytracer* tracer, mcconfig* cfg) {
                     pmesh->front[pmesh->nface] = ((nexteid == 0) ? 0 : pmesh->type[nexteid - 1]);
                     pmesh->back[pmesh->nface] = pmesh->type[i];
                     fnb[(i * pmesh->elemlen) + j] = -1;
-                    if(nexteid > 0){
-                        for(int k = 0; k < pmesh->elemlen; ++k){
-                            if(fnb[((nexteid - 1) * pmesh->elemlen) + k] == i + 1) {
+
+                    if (nexteid > 0) {
+                        for (int k = 0; k < pmesh->elemlen; ++k) {
+                            if (fnb[((nexteid - 1) * pmesh->elemlen) + k] == i + 1) {
                                 fnb[((nexteid - 1) * pmesh->elemlen) + k] = -1;
                                 break;
                             }
                         }
                     }
+
                     ++pmesh->nface;
                 }
             }
         }
+
         pmesh->face = (uint3*)realloc(pmesh->face, pmesh->nface * sizeof(uint3));
         pmesh->fnorm = (float3*)realloc(pmesh->fnorm, pmesh->nface * sizeof(float3));
         pmesh->front = (uint*)realloc(pmesh->front, pmesh->nface * sizeof(uint));
         pmesh->back = (uint*)realloc(pmesh->back, pmesh->nface * sizeof(uint));
 
-        if (fnb) free(fnb);
+        if (fnb) {
+            free(fnb);
+        }
     }
 
     if (tracer->n == NULL && tracer->m == NULL && tracer->d == NULL) {
@@ -1541,7 +1554,7 @@ float mesh_normalize(tetmesh* mesh, mcconfig* cfg, float Eabsorb, float Etotal, 
     // This is run whenever fluence or flux is chosen and type is badouel
     if (cfg->method == rtBLBadouelGrid) {
         normalizor = 1.0 / (Etotal * cfg->unitinmm * cfg->unitinmm * cfg->unitinmm); /*scaling factor*/
-    } 
+    }
     // This is run whenever fluence or flux is the chosen output:
     else {
         if (cfg->basisorder) {

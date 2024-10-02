@@ -8,8 +8,8 @@
 extern "C" {
 #endif
 
-void mmc_run_optix(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, 
-    void (*progressfun)(float, void*), void* handle);
+void mmc_run_optix(mcconfig* cfg, tetmesh* mesh, raytracer* tracer,
+                   void (*progressfun)(float, void*), void* handle);
 
 #ifdef __cplusplus
 }

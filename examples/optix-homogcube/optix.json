@@ -3,7 +3,7 @@
 		"ID":"optix",
 		"OutputType":"fluence",
 		"RayTracer":"grid",
-		"Photons":100000000
+		"Photons":10
 	},
 	"Mesh":{
 		"MeshID":"optix",

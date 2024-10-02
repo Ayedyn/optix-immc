@@ -31,10 +31,10 @@ typedef struct __attribute__((aligned(16))) MMC_Parameter {
     float dstep;
     float tstart, tend;
     float Rtstep;
-    
+
     // variables for implicit tracing:
     float WIDTH_ADJ;
-    unsigned int num_inside_prims; 
+    unsigned int num_inside_prims;
 
     int maxgate;
     unsigned int mediumid0;             /**< initial medium type */
@@ -49,8 +49,8 @@ typedef struct __attribute__((aligned(16))) MMC_Parameter {
 } MMCParam;
 
 struct __attribute__((aligned(16))) TriangleMeshSBTData {
-    float4 *fnorm; /**< x,y,z: face normal; w: neighboring medium type */
-    OptixTraversableHandle *nbgashandle;
+    float4* fnorm; /**< x,y,z: face normal; w: neighboring medium type */
+    OptixTraversableHandle* nbgashandle;
 };
 
 #endif

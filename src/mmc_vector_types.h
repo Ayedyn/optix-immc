@@ -41,9 +41,9 @@
 #include <vector_types.h>
 
 #if defined(MMC_USE_SSE) || defined(USE_OPENCL) || defined(USE_CUDA)
-typedef float4 MMCfloat3;
+    typedef float4 MMCfloat3;
 #else
-typedef float3 MMCfloat3;
+    typedef float3 MMCfloat3;
 #endif
 
 typedef unsigned int uint;

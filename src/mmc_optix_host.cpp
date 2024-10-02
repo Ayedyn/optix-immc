@@ -12,8 +12,8 @@ this unit, we first launch a master thread and initialize the necessary data
 structures.This include the command line options(cfg), tetrahedral mesh(mesh)
 and the ray tracer precomputed data (tracer).
 ******************************************************************************/
-void mmc_run_optix(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, 
-    void (*progressfun)(float, void*), void* handle) {
+void mmc_run_optix(mcconfig* cfg, tetmesh* mesh, raytracer* tracer,
+                   void (*progressfun)(float, void*), void* handle) {
     GPUInfo* gpuinfo = NULL;      /** gpuinfo: structure to store GPU information */
     unsigned int activedev = 0;   /** activedev: count of total active GPUs to be used */
 
