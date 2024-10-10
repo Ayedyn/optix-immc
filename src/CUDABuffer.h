@@ -28,8 +28,12 @@ namespace osc {
 /*! simple wrapper for creating, and managing a device-side CUDA
     buffer */
 struct CUDABuffer {
+    ~CUDABuffer() {
+        free();
+    }
+
     inline CUdeviceptr d_pointer() const {
-        return (CUdeviceptr)d_ptr;
+        return (CUdeviceptr) d_ptr;
     }
 
     //! re-size buffer to given number of bytes

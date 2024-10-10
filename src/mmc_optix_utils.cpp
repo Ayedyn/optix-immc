@@ -19,10 +19,12 @@
 #include "mmc_cuda_query_gpu.h"
 #include "mmc_optix_utils.h"
 #include "mmc_tictoc.h"
+#include "surface_boundary.h"
 
 INCTXT(mmcShaderPtx, mmcShaderPtxSize, "built/mmc_optix_core.ptx");
 const int out[4][3] = {{0, 3, 1}, {3, 2, 1}, {0, 2, 3}, {0, 1, 2}};
 const int ifaceorder[] = {3, 0, 2, 1};
+const unsigned int IMPLICIT_MATERIAL = 1;
 
 bool usingImplicitPrimitives = true;  // TODO remove temporary test variable
 
@@ -33,9 +35,23 @@ void optix_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer,
     // ==================================================================
     // prepare optix pipeline
     // ==================================================================
-    OptixParams optixcfg;
+    OptixParams optixcfg {};
 
     initOptix();
+
+    // TODO: make this inputted by user
+    if (usingImplicitPrimitives) {
+        immc::ImplicitCapsule test_capsule_1{make_float3(20.0, 20.0, 20.0), make_float3(50.0, 50.0, 20.0), 5.0}; //v1, v2, width
+        immc::ImplicitCapsule test_capsule_2{make_float3(0.0, 0.0, 0.0), make_float3(50.0, 0.0, 0.0), 1.0}; //v1, v2, width
+
+        optixcfg.capsules.resize(2);
+        optixcfg.capsules.push_back(test_capsule_1);
+        optixcfg.capsules.push_back(test_capsule_2);
+
+        optixcfg.spheres.resize(1);
+        immc::ImplicitSphere test_sphere_1{make_float3(1, 1, 1), 0.3};
+        optixcfg.spheres.push_back(test_sphere_1);
+    }
 
     // temp variable:
     float WIDTH_ADJ_TEMP = 1 / 1024.0;
@@ -69,17 +85,22 @@ void optix_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer,
     // build acceleration structures for all sphere primitives and capsule
     // primitives
     if (usingImplicitPrimitives) {
+        // Need to populate gas handles
         buildImplicitASHierarchy(mesh, smesh_lowlevel_array, &optixcfg,
                                  primitiveoffset, WIDTH_ADJ_TEMP);
+        buildSurfaceData(mesh, smesh_lowlevel_array, &optixcfg);
     }
 
     // build acceleration structure for only triangle meshes (one per
     // medium) shijie's original approach
     else {
+
+
         for (int i = 0; i <= mesh->prop; ++i) {
             optixcfg.gashandles.push_back(
                 buildSurfMeshAccel(mesh, smesh_lowlevel_array + i,
                                    &optixcfg, primitiveoffset));
+
             primitiveoffset += smesh_lowlevel_array[i].norm.size();
         }
     }
@@ -309,20 +330,19 @@ void prepLaunchParams(mcconfig* cfg, tetmesh* mesh, GPUInfo* gpu,
     optixcfg->launchParams.srcdir =
         make_float3(cfg->srcdir.x, cfg->srcdir.y, cfg->srcdir.z);
 
+    // sets the capsule geometry information in order of capsule creation
     if (usingImplicitPrimitives) {
-        // TODO get capsules from GUI output
-
-        immc::ImplicitCapsule test_capsule_1{make_float3(20.0, 20.0, 20.0), make_float3(50.0, 50.0, 20.0), 5.0}; //v1, v2, width
-        immc::ImplicitCapsule test_capsule_2{make_float3(0.0, 0.0, 0.0), make_float3(50.0, 0.0, 0.0), 1.0}; //v1, v2, width
-
-        optixcfg->capsules.resize(2);
-        optixcfg->capsules.push_back(test_capsule_1);
-        optixcfg->capsules.push_back(test_capsule_2);
-
         osc::CUDABuffer capsules_buf {};
         capsules_buf.alloc_and_upload(optixcfg->capsules);
 
         optixcfg->launchParams.capsuleData = capsules_buf.d_pointer();
+    }
+
+    // set the surface data information
+    if (usingImplicitPrimitives) {
+        osc::CUDABuffer surfaceData_buf {};
+        surfaceData_buf.alloc_and_upload(optixcfg->surfaceData);
+        optixcfg->launchParams.surfaceData = surfaceData_buf.d_pointer();
     }
 
     // parameters of dual grid
@@ -456,6 +476,7 @@ void createContext(mcconfig* cfg, OptixParams* optixcfg) {
                   << std::setw(12) << tag << "]: " << message << "\n";
     };
 #ifndef NDEBUG
+    printf("DEBUG MODE ACTIVATED");
     options.logCallbackLevel = 4;
     options.validationMode = OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL;
 #else
@@ -576,22 +597,22 @@ void createMissPrograms(OptixParams* optixcfg) {
     }
 }
 
-    // helper function for getting built-in intersection shader for sphere 
+// helper function for getting built-in intersection shader for sphere
 static OptixModule getSphereModule(OptixDeviceContext ctx, OptixParams* optixcfg) {
-        OptixModuleCompileOptions module_compile_options = {};
+    OptixModuleCompileOptions module_compile_options = {};
 #if !defined( NDEBUG )
-        module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
-        module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+    module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+    module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
 #endif
 
-        OptixBuiltinISOptions builtin_is_options = {};
+    OptixBuiltinISOptions builtin_is_options = {};
 
-        builtin_is_options.usesMotionBlur = false;
-        builtin_is_options.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_SPHERE;
-        OptixModule sphere_module;
-        OPTIX_CHECK(optixBuiltinISModuleGet(ctx, &module_compile_options, &optixcfg->pipelineCompileOptions,
-            &builtin_is_options, &sphere_module));
-        return sphere_module;
+    builtin_is_options.usesMotionBlur = false;
+    builtin_is_options.builtinISModuleType = OPTIX_PRIMITIVE_TYPE_SPHERE;
+    OptixModule sphere_module;
+    OPTIX_CHECK(optixBuiltinISModuleGet(ctx, &module_compile_options, &optixcfg->pipelineCompileOptions,
+                                        &builtin_is_options, &sphere_module));
+    return sphere_module;
 }
 
 
@@ -698,6 +719,79 @@ static void buildImplicitASHierarchy(tetmesh* mesh, surfmesh* smesh,
     optixcfg->outside_primitive_handles = outside_prim_handles;
 }
 
+// vector to look up a given material id, surface normal, and handle for
+// an instance acceleration structure
+// used in only implicit MMC
+static void buildSurfaceData(tetmesh* mesh, surfmesh* smesh, OptixParams* optixcfg) {
+
+    // add handles and material ID for all entering-implicit acceleration structures
+    for (int i = 0; i <= mesh->prop; ++i) {
+        // add handles and material ID for curves superimposed on a surface mesh
+        for (const immc::ImplicitCapsule& capsule : optixcfg->capsules) {
+            immc::SurfaceBoundary c_data{make_float4(0, 0, 0, static_cast<float>(IMPLICIT_MATERIAL)), 
+                optixcfg->inside_primitive_handles[i]};
+            optixcfg->surfaceData.push_back(c_data);
+        }
+
+        // add handles and material ID for spheres superimposed on a surface mesh
+        for (const immc::ImplicitSphere& sphere : optixcfg->spheres) {
+            immc::SurfaceBoundary s_data{make_float4(sphere.position.x,
+                                            sphere.position.y,
+                                            sphere.position.z,
+                                            static_cast<float>(IMPLICIT_MATERIAL)), 
+                                             optixcfg->inside_primitive_handles[i]};
+            optixcfg->surfaceData.push_back(s_data);
+        }
+
+        // add handles and material ID for triangles composing the surface mesh
+        // TODO: figure out why this conditional is here:
+        for (int j = 0; j < smesh[i].norm.size(); ++j) {
+            immc::SurfaceBoundary t_data{make_float4(
+                                                smesh[i].norm[j].x, smesh[i].norm[j].y,
+                                                smesh[i].norm[j].z, 
+                                                static_cast<float>(smesh[i].nbtype[j])),
+                                                optixcfg->outside_primitive_handles[i]};
+            optixcfg->surfaceData.push_back(t_data);
+        }
+    }
+
+    // TODO: check if the material property of exiting implicits needs to be set to
+    // surface mesh material instead of 0.
+    // add handles and material ID for all exiting-implicit acceleration structures
+    for (int i = 0; i <= mesh->prop; ++i) {
+        // add handles and material ID for curves superimposed on a surface mesh
+        for (const immc::ImplicitCapsule& capsule : optixcfg->capsules) {
+            // give 0,0,0 as normal vector for capsule since we will be
+            // calculating normals on intersection           
+            immc::SurfaceBoundary c_data{make_float4(
+                                        0, 0, 0, 0),
+                                        optixcfg->inside_primitive_handles[i]};
+            optixcfg->surfaceData.push_back(c_data);
+        }
+
+        // add handles and material ID for spheres superimposed on a surface mesh
+        for (const immc::ImplicitSphere& sphere : optixcfg->spheres) {
+            immc::SurfaceBoundary s_data{make_float4(sphere.position.x,
+                                            sphere.position.y,
+                                            sphere.position.z,
+                                            0), optixcfg->inside_primitive_handles[i]};
+            // give sphere center location for calculating normal on intersection
+            optixcfg->surfaceData.push_back(s_data);
+        }
+
+        // add handles and material ID for triangles composing the surface mesh
+        // TODO: figure out why this conditional is here:
+        for (int j = 0; j < smesh[i].norm.size(); ++j) {
+            immc::SurfaceBoundary t_data{make_float4(
+                                        smesh[i].norm[j].x, smesh[i].norm[j].y,
+                                        smesh[i].norm[j].z, 
+                                        static_cast<float>(IMPLICIT_MATERIAL)),
+                                            optixcfg->outside_primitive_handles[i]};
+            optixcfg->surfaceData.push_back(t_data);
+        }
+    }
+}
+
 // Takes a single triangle surface mesh for a given material property
 // builds a geometry acceleration structure (GAS) for spheres,
 // then a GAS for capsules, then a GAS for triangles of the surface mesh
@@ -726,6 +820,8 @@ static OptixTraversableHandle buildSurfacesWithPrimitives(
         capsuleWidths.push_back(capsule.width + capsuleWidthAdjustment);
         capsulecount = capsulecount + 1;
     }
+
+    printf("\n finished pushing back geometries from config");
 
     // create the acceleration structures for capsules
     if (capsuleWidths.size() > 0) {
@@ -782,6 +878,9 @@ static OptixTraversableHandle createCapsuleAccelStructure(
     // traversable handle we will ultimately build the accel structure to:
     OptixTraversableHandle capsulesHandle;
 
+#ifndef NDBUG
+    printf("\nCreating capsule acceleration structures");
+#endif
     OptixBuildInput buildInput = {};
     buildInput.type = OPTIX_BUILD_INPUT_TYPE_CUSTOM_PRIMITIVES;
 
@@ -857,7 +956,6 @@ static OptixTraversableHandle createCapsuleAccelStructure(
     compactedSizeBuffer.alloc(sizeof(uint64_t));
 
     emitDesc.result = compactedSizeBuffer.d_pointer();
-
     OPTIX_CHECK(
         optixAccelBuild(optixcfg->optixContext, optixcfg->stream,
                         &accelerationOptions, &buildInput,
@@ -871,24 +969,25 @@ static OptixTraversableHandle createCapsuleAccelStructure(
     // ==================================================================
     uint64_t compactedSize;
     compactedSizeBuffer.download(&compactedSize, 1);
-
-    optixcfg->asBuffer.alloc(compactedSize);
+    printf("\n reached this section test");
+    osc::CUDABuffer compactedOutputBuffer;
+    compactedOutputBuffer.alloc(compactedSize);
+    printf("\n reached after the alloc");
     OPTIX_CHECK(
         optixAccelCompact(optixcfg->optixContext, optixcfg->stream,
-                          capsulesHandle, optixcfg->asBuffer.d_pointer(),
-                          optixcfg->asBuffer.sizeInBytes, &capsulesHandle));
+                          capsulesHandle, compactedOutputBuffer.d_pointer(),
+                          compactedOutputBuffer.sizeInBytes, &capsulesHandle));
     CUDA_SYNC_CHECK();
-
     // ==================================================================
     // clean up
     // ==================================================================
     outputBuffer.free();  // << the UNcompacted, temporary output buffer
     tempBuffer.free();
     compactedSizeBuffer.free();
+    compactedOutputBuffer.free();
 
 #ifndef NDEBUG
-    printf(
-        "\nBuilt an optix acceleration structure of type: custom capsule");
+    printf("\nBuilt an optix acceleration structure of type: custom capsule");
 #endif
 
     return capsulesHandle;
@@ -901,6 +1000,11 @@ static OptixTraversableHandle createSphereAccelStructure(
     OptixParams* optixcfg, const std::vector<float3>& sphere_centers,
     const std::vector<float>& sphere_radii,
     const unsigned int primitiveOffset) {
+
+#ifndef NDEBUG
+    printf("\nCreating sphere acceleration structures");
+#endif
+
     // creates a handle that will ultimately point to the built
     // accelerations structure
     OptixTraversableHandle spheresHandle;
@@ -964,22 +1068,25 @@ static OptixTraversableHandle createSphereAccelStructure(
     // ==================================================================
     // perform compaction
     // ==================================================================
+    printf("b1");
     uint64_t compactedSize;
     compactedSizeBuffer.download(&compactedSize, 1);
-
-    optixcfg->asBuffer.alloc(compactedSize);
+    printf("b2");
+    osc::CUDABuffer compactedOutputBuffer;
+    compactedOutputBuffer.alloc(compactedSize);
     OPTIX_CHECK(
         optixAccelCompact(optixcfg->optixContext, optixcfg->stream,
-                          spheresHandle, optixcfg->asBuffer.d_pointer(),
-                          optixcfg->asBuffer.sizeInBytes, &spheresHandle));
+                          spheresHandle, compactedOutputBuffer.d_pointer(),
+                          compactedOutputBuffer.sizeInBytes, &spheresHandle));
     CUDA_SYNC_CHECK();
-
+    printf("b3");
     // ==================================================================
     // clean up
     // ==================================================================
     outputBuffer.free();  // << the UNcompacted, temporary output buffer
     tempBuffer.free();
     compactedSizeBuffer.free();
+    compactedOutputBuffer.free();
 
 #ifndef NDEBUG
     printf("\nBuilt an optix acceleration structure of type: sphere");
@@ -1005,8 +1112,12 @@ OptixTraversableHandle buildSurfMeshAccel(tetmesh* tmesh, surfmesh* smesh,
     // note: mesh->fnode needs to be float3
     // mesh->face needs to be uint3 (zero-indexed)
     // ==================================================================
-    optixcfg->vertexBuffer.alloc_and_upload(tmesh->fnode, tmesh->nn);
-    optixcfg->indexBuffer.alloc_and_upload(smesh->face);
+
+    osc::CUDABuffer vert_buff;
+    vert_buff.alloc_and_upload(tmesh->fnode, tmesh->nn);
+
+    osc::CUDABuffer idx_buff;
+    idx_buff.alloc_and_upload(smesh->face);
 
     // ==================================================================
     // triangle inputs
@@ -1016,8 +1127,8 @@ OptixTraversableHandle buildSurfMeshAccel(tetmesh* tmesh, surfmesh* smesh,
 
     // create local variables, because we need a *pointer* to the
     // device pointers
-    CUdeviceptr d_vertices = optixcfg->vertexBuffer.d_pointer();
-    CUdeviceptr d_indices = optixcfg->indexBuffer.d_pointer();
+    CUdeviceptr d_vertices = vert_buff.d_pointer();
+    CUdeviceptr d_indices = idx_buff.d_pointer();
 
     triangleInput.triangleArray.vertexFormat = OPTIX_VERTEX_FORMAT_FLOAT3;
     triangleInput.triangleArray.vertexStrideInBytes = sizeof(float3);
@@ -1088,19 +1199,24 @@ OptixTraversableHandle buildSurfMeshAccel(tetmesh* tmesh, surfmesh* smesh,
     uint64_t compactedSize;
     compactedSizeBuffer.download(&compactedSize, 1);
 
-    optixcfg->asBuffer.alloc(compactedSize);
-    OPTIX_CHECK(optixAccelCompact(optixcfg->optixContext, optixcfg->stream,
-                                  asHandle, optixcfg->asBuffer.d_pointer(),
-                                  optixcfg->asBuffer.sizeInBytes,
+    osc::CUDABuffer compactedOutputBuffer;
+    compactedOutputBuffer.alloc(compactedSize);
+
+    printf("\nBuilding a surface mesh acceleration structure");
+    OPTIX_CHECK(optixAccelCompact(optixcfg->optixContext,
+                                  optixcfg->stream,
+                                  asHandle, compactedOutputBuffer.d_pointer(),
+                                  compactedOutputBuffer.sizeInBytes,
                                   &asHandle));
     CUDA_SYNC_CHECK();
-
+    printf("\nSuccessfully built a surface mesh acceleration structure");
     // ==================================================================
     // clean up
     // ==================================================================
     outputBuffer.free();  // << the UNcompacted, temporary output buffer
     tempBuffer.free();
     compactedSizeBuffer.free();
+    compactedOutputBuffer.free();
 
     return asHandle;
 }
@@ -1108,6 +1224,11 @@ OptixTraversableHandle buildSurfMeshAccel(tetmesh* tmesh, surfmesh* smesh,
 static OptixTraversableHandle createInstanceAccelerationStructure(
     OptixParams* optixcfg,
     std::vector<OptixTraversableHandle> handles_to_combine) {
+
+#ifndef NDBUG
+    printf("\nCreating instance acceleration structures");
+#endif
+
     OptixTraversableHandle instanceHandle;
 
     std::vector<OptixInstance> instances = std::vector<OptixInstance>();
@@ -1126,6 +1247,7 @@ static OptixTraversableHandle createInstanceAccelerationStructure(
         i++;
     }
 
+    printf("\n before alloc and upload of instances");
     osc::CUDABuffer instanceBuffer;
     instanceBuffer.alloc_and_upload(instances);
 
@@ -1155,7 +1277,7 @@ static OptixTraversableHandle createInstanceAccelerationStructure(
 
     osc::CUDABuffer outputBuffer;
     outputBuffer.alloc(bufferSizes.outputSizeInBytes);
-
+    printf("\n before building instance accel structure");
     OPTIX_CHECK(
         optixAccelBuild(optixcfg->optixContext, optixcfg->stream,
                         &accelerationOptions, &buildInput,
@@ -1163,31 +1285,29 @@ static OptixTraversableHandle createInstanceAccelerationStructure(
                         tempBuffer.d_pointer(), tempBuffer.sizeInBytes,
                         outputBuffer.d_pointer(), outputBuffer.sizeInBytes,
                         &instanceHandle, &emitDesc, 1));
-
-#ifndef NDEBUG
-    printf("\nBuilt an optix acceleration structure of type: instances");
-#endif
-
+    printf("\n after building instance accel structure");
     // ==================================================================
     // perform compaction
     // ==================================================================
     uint64_t compactedSize;
     compactedSizeBuffer.download(&compactedSize, 1);
 
-    optixcfg->asBuffer.alloc(compactedSize);
+    // temporary buffer to define location and size to store compacted accel structure on the GPU
+    osc::CUDABuffer compactedOutputBuffer;
+    compactedOutputBuffer.alloc(compactedSize);
     OPTIX_CHECK(
         optixAccelCompact(optixcfg->optixContext, optixcfg->stream,
-                          instanceHandle, optixcfg->asBuffer.d_pointer(),
-                          optixcfg->asBuffer.sizeInBytes, &instanceHandle));
+                          instanceHandle, compactedOutputBuffer.d_pointer(),
+                          compactedOutputBuffer.sizeInBytes, &instanceHandle));
     CUDA_SYNC_CHECK();
-
+    printf("\nafter compacting instance accel structure");
     // ==================================================================
     // clean up
     // ==================================================================
     outputBuffer.free();  // << the UNcompacted, temporary output buffer
     tempBuffer.free();
     compactedSizeBuffer.free();
-
+    compactedOutputBuffer.free();
     return instanceHandle;
 }
 
@@ -1264,47 +1384,22 @@ void buildSBT(tetmesh* mesh, surfmesh* smesh, OptixParams* optixcfg) {
     // ==================================================================
 
     if (usingImplicitPrimitives) {
-        HitgroupRecord cylinders_rec;
+        HitgroupRecord capsules_rec;
         HitgroupRecord spheres_rec;
         HitgroupRecord triangles_rec;
 
-        OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[0], &cylinders_rec));
+        OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[0], &capsules_rec));
         OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[1], &spheres_rec));
         OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[2], &triangles_rec));
 
-        // combine face normal + front + back into a float4 array
-
-        // Below is triangle-specific record modifications
-        // TODO clean this up
-        std::vector<float4> fnorm;
-        std::vector<OptixTraversableHandle> nbgashandle;
-
-        for (int i = 0; i <= mesh->prop; ++i) {
-            for (size_t j = 0; j < smesh[i].norm.size(); ++j) {
-                fnorm.push_back(make_float4(
-                                    smesh[i].norm[j].x, smesh[i].norm[j].y,
-                                    smesh[i].norm[j].z, *(float*)&smesh[i].nbtype[j]));
-                nbgashandle.push_back(
-                    optixcfg->gashandles[smesh[i].nbtype[j]]);
-            }
-        }
-
-        optixcfg->fnormBuffer.alloc_and_upload(fnorm);
-        optixcfg->nbgashandleBuffer.alloc_and_upload(nbgashandle);
-
-        triangles_rec.data.fnorm = (float4*)optixcfg->fnormBuffer.d_pointer();
-        triangles_rec.data.nbgashandle =
-            (OptixTraversableHandle*)optixcfg->nbgashandleBuffer.d_pointer();
-        // Above is triangle specific record modifications
-
-
         std::vector<HitgroupRecord> hitgroupRecords;
-        hitgroupRecords.push_back(cylinders_rec);
+        hitgroupRecords.push_back(capsules_rec);
         hitgroupRecords.push_back(spheres_rec);
         hitgroupRecords.push_back(triangles_rec);
 
-        // GPU Allocations everything in the hitgroupRecords vector supposively
-        // TODO figure out what this is doing
+        // allocate and upload nothing for the implicit primitives. All data
+        // is going on the launchParams
+        // TODO: performance test if putting SurfaceData on hitgroup record data is better
         optixcfg->hitgroupRecordsBuffer.alloc_and_upload(hitgroupRecords);
         optixcfg->sbt.hitgroupRecordBase = optixcfg->hitgroupRecordsBuffer.d_pointer();
         optixcfg->sbt.hitgroupRecordStrideInBytes = sizeof(HitgroupRecord);
@@ -1315,7 +1410,9 @@ void buildSBT(tetmesh* mesh, surfmesh* smesh, OptixParams* optixcfg) {
 
     std::vector<HitgroupRecord> hitgroupRecords;
     HitgroupRecord rec;
+
     // all meshes use the same code, so all same hit group
+    // pack the header for the SBT record
     OPTIX_CHECK(optixSbtRecordPackHeader(optixcfg->hitgroupPGs[0], &rec));
 
     // combine face normal + front + back into a float4 array
@@ -1332,8 +1429,13 @@ void buildSBT(tetmesh* mesh, surfmesh* smesh, OptixParams* optixcfg) {
         }
     }
 
+    // prepare buffers on the gpu for holding face-normal data and
+    // triangle mesh handles
     optixcfg->fnormBuffer.alloc_and_upload(fnorm);
     optixcfg->nbgashandleBuffer.alloc_and_upload(nbgashandle);
+
+    // save the locations of the face-normals and triangle mesh handles on
+    // SBT record data
     rec.data.fnorm = (float4*)optixcfg->fnormBuffer.d_pointer();
     rec.data.nbgashandle =
         (OptixTraversableHandle*)optixcfg->nbgashandleBuffer.d_pointer();

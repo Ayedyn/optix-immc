@@ -22,6 +22,7 @@ typedef struct __attribute__((aligned(16))) MMC_Parameter {
     CUdeviceptr seedbuffer;             /**< rng seed for each thread */
     CUdeviceptr outputbuffer;
     CUdeviceptr capsuleData;           // this points to a device buffer with immc capsules
+    CUdeviceptr surfaceData;
 
     float3 srcpos;
     float3 srcdir;

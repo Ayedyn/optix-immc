@@ -9,6 +9,7 @@
 #include <vector>
 #include "implicit_capsule.h"
 #include "implicit_sphere.h"
+#include "surface_boundary.h"
 
 /*! SBT record for a raygen program */
 struct __align__( OPTIX_SBT_RECORD_ALIGNMENT ) RaygenRecord {
@@ -87,6 +88,11 @@ struct OptixParams {
     std::vector<OptixTraversableHandle> inside_primitive_handles;
     std::vector<OptixTraversableHandle> outside_primitive_handles;
 
+    /*! vector of surface data for implicit MMC raytracing*/
+    /* needed to track triangular mesh intersections
+     * while traversing superimposed primitives */
+    std::vector<immc::SurfaceBoundary> surfaceData;
+
     /*! vector of capsules for immc */
     std::vector<immc::ImplicitCapsule> capsules;
 
@@ -127,6 +133,9 @@ static void buildImplicitASHierarchy(
     tetmesh* tmesh, surfmesh* smesh,
     OptixParams* optixcfg, unsigned int& primitiveoffset,
     const float WIDTH_ADJ);
+
+static void buildSurfaceData(
+    tetmesh* tmesh, surfmesh* smesh, OptixParams* optixcfg);
 
 static OptixTraversableHandle createCapsuleAccelStructure(
     OptixParams* optixcfg,

@@ -305,8 +305,6 @@ __device__ __forceinline__ bool reflectray(const float3& norm, const float& n1,
 extern "C" __global__ void __raygen__rg() {
     uint3 launchindex = optixGetLaunchIndex();
 
-    printf("RAYGEN\n");
-
     // init RNG seed for each thread
     mcx::Random rng;
     initRNGSeed(rng, launchindex.x);
@@ -375,7 +373,7 @@ extern "C" __global__ void __closesthit__ch() {
     const OptixPrimitiveType hit_type = optixGetPrimitiveType(hitkind);
 
     if (hit_type == OptixPrimitiveType::OPTIX_PRIMITIVE_TYPE_CUSTOM) {
-        // TODO do something with the medium since it's a sphere
+        // TODO do something with the medium since it's a capsule
         r.mediumid = 2.0;
 
         printf("HIT\n");
