@@ -159,6 +159,9 @@ void createPipeline(OptixParams* optixcfg);
 void buildSBT(tetmesh* tmesh, surfmesh* smesh, OptixParams* optixcfg);
 void prepLaunchParams(mcconfig* cfg, tetmesh* mesh, GPUInfo* gpu,
                       OptixParams* optixcfg);
+bool startInSphere(const OptixParams* optixcfg);
+bool startInCapsule(const OptixParams* optixcfg);
+
 void clearOptixParams(OptixParams* optixcfg);
 
 #ifdef __cplusplus

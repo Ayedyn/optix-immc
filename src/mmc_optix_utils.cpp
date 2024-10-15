@@ -361,12 +361,34 @@ void prepLaunchParams(mcconfig* cfg, tetmesh* mesh, GPUInfo* gpu,
     optixcfg->launchParams.Rtstep = 1.0f / cfg->tstep;
     optixcfg->launchParams.maxgate = cfg->maxgate;
 
+    if (usingImplicitPrimitives){
+        // starting handle needs to be chosen based on whether photon is starting in or out
+        // of an implicitly defined shape
+
+        // initialize starting handle and medium if the ray is in an implicit shape
+        if(startInSphere(optixcfg) || startInCapsule(optixcfg)){
+           optixcfg->launchParams.mediumid0 = IMPLICIT_MATERIAL;   
+           optixcfg->launchParams.gashandle0 = 
+               optixcfg->inside_primitive_handles[optixcfg->launchParams.mediumid0];
+        }
+        // initialize starting handle and medium if the ray is outside an implicit shape 
+        else{
+            // init medium ID using element based
+            optixcfg->launchParams.mediumid0 = mesh->type[cfg->e0 - 1];
+
+            // init gashandle using initial medium ID
+            optixcfg->launchParams.gashandle0 = 
+            optixcfg->outside_primitive_handles[optixcfg->launchParams.mediumid0];
+        }
+    }
+    else{
     // init medium ID using element based
     optixcfg->launchParams.mediumid0 = mesh->type[cfg->e0 - 1];
 
     // init gashandle using initial medium ID
     optixcfg->launchParams.gashandle0 =
         optixcfg->gashandles[optixcfg->launchParams.mediumid0];
+    }
 
     // simulation flags
     optixcfg->launchParams.isreflect = cfg->isreflect;
@@ -726,7 +748,7 @@ static void buildSurfaceData(tetmesh* mesh, surfmesh* smesh, OptixParams* optixc
 
     // add handles and material ID for all entering-implicit acceleration structures
     for (int i = 0; i <= mesh->prop; ++i) {
-        // add handles and material ID for curves superimposed on a surface mesh
+        // add handles and material ID for capsules superimposed on a surface mesh
         for (const immc::ImplicitCapsule& capsule : optixcfg->capsules) {
             immc::SurfaceBoundary c_data{make_float4(0, 0, 0, static_cast<float>(IMPLICIT_MATERIAL)), 
                 optixcfg->inside_primitive_handles[i]};
@@ -759,7 +781,7 @@ static void buildSurfaceData(tetmesh* mesh, surfmesh* smesh, OptixParams* optixc
     // surface mesh material instead of 0.
     // add handles and material ID for all exiting-implicit acceleration structures
     for (int i = 0; i <= mesh->prop; ++i) {
-        // add handles and material ID for curves superimposed on a surface mesh
+        // add handles and material ID for capsules superimposed on a surface mesh
         for (const immc::ImplicitCapsule& capsule : optixcfg->capsules) {
             // give 0,0,0 as normal vector for capsule since we will be
             // calculating normals on intersection           
@@ -1093,6 +1115,63 @@ static OptixTraversableHandle createSphereAccelStructure(
 #endif
 
     return spheresHandle;
+}
+
+bool startInSphere(const OptixParams* optixcfg){
+    if(optixcfg->spheres.size() == 0)
+        return false;
+
+    float3 startPos = optixcfg->launchParams.srcpos;
+
+    for (immc::ImplicitSphere sphere : optixcfg->spheres) {
+        float3 displacement = startPos - sphere.position;
+        if (dot(displacement, displacement) <= sphere.radius*sphere.radius) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool startInCapsule(const OptixParams* optixcfg){
+    if(optixcfg->capsules.size() == 0)
+        return false;
+   
+    // starting position of ray
+    float3 position = optixcfg->launchParams.srcpos; 
+    for (immc::ImplicitCapsule capsule : optixcfg->capsules) {
+        // vector along the line segment of the capsule
+        float3 vector_alongcapsule =
+            make_float3(capsule.vertex2.x - capsule.vertex1.x,
+                capsule.vertex2.y - capsule.vertex1.y,
+                capsule.vertex2.z - capsule.vertex1.z);
+        // vector from the first vertex to the position
+        float3 vector_toposition = make_float3(
+            position.x - capsule.vertex1.x, position.y - capsule.vertex1.y,
+            position.z - capsule.vertex1.z);
+        // computes the scalar projection of vector to position onto the
+        // line segment
+        float scalarproj = dot(vector_alongcapsule, vector_toposition) /
+                   dot(vector_alongcapsule, vector_alongcapsule);
+        // computes the projection of the vector to position onto the
+        // line segment
+        float3 projection =
+            make_float3(vector_alongcapsule.x * scalarproj,
+                vector_alongcapsule.y * scalarproj,
+                vector_alongcapsule.z * scalarproj);
+        // gets the vector for the shortest distance from line segment
+        float3 distance_vector =
+            make_float3(vector_toposition.x - projection.x,
+                vector_toposition.y - projection.y,
+                vector_toposition.z - projection.z);
+        // get the magnitude of that vector
+        float distance = sqrt(distance_vector.x * distance_vector.x +
+                      distance_vector.y * distance_vector.y +
+                      distance_vector.z * distance_vector.z);
+        if (distance < capsule.width) {
+            return true;
+        }                                                                                     
+    }
+
 }
 
 /**
