@@ -90,7 +90,7 @@ typedef struct MMC_mesh {
     int nf;                /**< number of surface triangles */
     int prop;              /**< number of media */
     int elemlen;           /**< number of nodes per element */
-    FLOAT3* node;          /**< node coordinates, FLOAT3 is defined in vector_types.h, it is the true float3, which has a size of 12 byte */
+    FLOAT3* node;       /**< node coordinates */
     int*  elem;            /**< element indices */
     int*  elem2;           /**< element indices */
     float* edgeroi;        /**< immc: vessel edge radii */
@@ -103,13 +103,24 @@ typedef struct MMC_mesh {
     int*  type;            /**< element-based media index */
     int*  facenb;          /**< face neighbors, idx of the element sharing a face */
     medium* med;           /**< optical property of different media */
+    float* atte;           /**< precomputed attenuation for each media */
     double* weight;        /**< volumetric fluence for all nodes at all time-gates */
     double* dref;          /**< surface diffuse reflectance */
     float* evol;           /**< volume of an element */
     float* nvol;           /**< voronoi volume of a node */
+    double* deldotdel;     /**< per-element ⟨∇φ_i·∇φ_j⟩*Ve symmetric matrix (upper-triangle
+                                packed, 10 entries per element [d00,d01,d02,d03,d11,d12,d13,d22,d23,d33]);
+                                allocated lazily for mesh-mode adjoint Jacobian */
     float4 nmin;           /**< lower-corner of the mesh bounding box */
     float4 nmax;           /**< upper-corner of the mesh bounding box */
+    uint nface;            /**< number of triangular meshes */
+    FLOAT3* fnode;         /**< triangular mesh nodes */
+    uint3* face;           /**< triangular meshes */
+    FLOAT3* fnorm;         /**< face normal: pointing from back to front */
+    uint* front;           /**< front face medium */
+    uint* back;            /**< back face medium */
 } tetmesh;
+
 
 /***************************************************************************//**
 \struct MMC_raytracer simpmesh.h
@@ -146,6 +157,7 @@ void mesh_build(tetmesh* mesh);
 void mesh_error(const char* msg, const char* file, const int linenum);
 void mesh_filenames(const char* format, char* foutput, mcconfig* cfg);
 void mesh_saveweight(tetmesh* mesh, mcconfig* cfg, int isref);
+void mesh_savejacob(mcconfig* cfg, tetmesh* mesh, float* jac, int Ns, int Nd, int isrfforward, int isdual);
 void mesh_savedetphoton(float* ppath, void* seeds, int count, int seedbyte, mcconfig* cfg);
 void mesh_getdetimage(float* detmap, float* ppath, int count, mcconfig* cfg, tetmesh* mesh);
 void mesh_savedetimage(float* detmap, mcconfig* cfg);
@@ -157,8 +169,10 @@ double mesh_getreff_approx(double n_in, double n_out);
 double mesh_getreff(double n_in, double n_out);
 int mesh_barycentric(int e0, float* bary, FLOAT3* srcpos, tetmesh* mesh);
 int mesh_initelem(tetmesh* mesh, mcconfig* cfg);
+void mesh_init_srcdata_eid(tetmesh* mesh, mcconfig* cfg);
 void mesh_validate(tetmesh* mesh, mcconfig* cfg);
 void mesh_getvolume(tetmesh* mesh, mcconfig* cfg);
+void mesh_deldotdel(tetmesh* mesh);
 
 void tracer_init(raytracer* tracer, tetmesh* mesh, char methodid);
 void tracer_build(raytracer* tracer);
@@ -318,5 +332,29 @@ static inline float mmc_rsqrtf(float a) {
     return 1.f / sqrtf(a);
 #endif
 }
+
+#ifndef __NVCC__
+static inline void rotatevector(float3* dir, float stheta, float ctheta, float sphi, float cphi) {
+    float3 p;
+    float tmp0;
+
+    if (dir->z > -1.f + EPS && dir->z < 1.f - EPS) {
+        tmp0 = 1.f - dir->z * dir->z;
+        float tmp1 = stheta * mmc_rsqrtf(tmp0);
+        p.x = tmp1 * (dir->x * dir->z * cphi - dir->y * sphi) + dir->x * ctheta;
+        p.y = tmp1 * (dir->y * dir->z * cphi + dir->x * sphi) + dir->y * ctheta;
+        p.z = -tmp1 * tmp0 * cphi                              + dir->z * ctheta;
+    } else {
+        p.x = stheta * cphi;
+        p.y = stheta * sphi;
+        p.z = (dir->z > 0.f) ? ctheta : -ctheta;
+    }
+
+    tmp0 = mmc_rsqrtf(p.x * p.x + p.y * p.y + p.z * p.z);
+    dir->x = p.x * tmp0;
+    dir->y = p.y * tmp0;
+    dir->z = p.z * tmp0;
+}
+#endif /* __NVCC__ */
 
 #endif

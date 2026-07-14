@@ -217,6 +217,9 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
     int4* gelem, *gfacenb;
     float4* gnormal;
     int* gtype, *gsrcelem;
+    /* per-node optical property arrays for DOT reconstruction (NULL when unused) */
+    float* gnodemua_cu = NULL;
+    float* gnodemusp_cu = NULL;
     uint* gseed, *gdetected;
     volatile int* progress, *gprogress;
     float* gweight, *gdref, *gdetphoton, *genergy, *gsrcpattern, *gdebugdata;
@@ -224,8 +227,12 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
     float*  greplayweight = NULL, *greplaytime = NULL;
 
     MCXReporter* greporter;
-    uint meshlen = ((cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : mesh->ne) * cfg->srcnum;
-    cfg->crop0.w = meshlen * cfg->maxgate; // offset for the second buffer
+    int isrfforward = (cfg->omega > 0.f && cfg->seed != SEED_FROM_FILE);
+    /* For adjoint/multi-source mode, expand meshlen to cover all source slots.
+     * cfg->srcid > 0 selects a single slot from srcdata, so the field buffer collapses to one slot. */
+    uint nsrcslots = (cfg->extrasrclen > 0 && cfg->srcid <= 0) ? (uint)cfg->extrasrclen : 1u;
+    uint meshlen = ((cfg->method == rtBLBadouelGrid) ? cfg->crop0.z : mesh->ne) * cfg->srcnum * nsrcslots;
+    cfg->crop0.w = meshlen * cfg->maxgate; // offset for the second (double) buffer
 
     float* field, *dref = NULL;
 
@@ -282,12 +289,19 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
         mesh->srcelemlen,
         cfg->e0,
         cfg->isextdet,
-        (uint)(meshlen / cfg->srcnum),
-        (uint)(mesh->prop + 1 + cfg->isextdet) + cfg->detnum,
-        (uint)(MIN((MAX_PROP - (mesh->prop + 1 + cfg->isextdet) - cfg->detnum), ((mesh->ne) << 2)) >> 2), /*max count of elem normal data in const mem*/
+        (uint)(meshlen / (cfg->srcnum * nsrcslots)),  /* framelen = datalen (per-gate stride); slot stride is datalen*maxgate */
+        (uint)(mesh->prop + 1 + cfg->isextdet) + (uint)(cfg->extrasrclen * 4) + cfg->detnum,
+        (uint)(MIN((MAX_PROP - (mesh->prop + 1 + cfg->isextdet) - (cfg->extrasrclen * 4) - cfg->detnum), ((mesh->ne) << 2)) >> 2), /*max count of elem normal data in const mem*/
         cfg->issaveseed,
         cfg->seed,
-        cfg->maxjumpdebug
+        cfg->maxjumpdebug,
+        cfg->omega,
+        (float)(3.335640951981520e-12),   /* oneoverc0 = 1/C0 in s/mm */
+        (cfg->extrasrclen > 0 && cfg->srcid == 0) ? -1 : cfg->srcid,  /* srcid<0 multi-slot, srcid>0 single slot, srcid==0 with srcdata: auto-promote to -1 */
+        cfg->extrasrclen,
+        (int)(mesh->prop + 1 + cfg->isextdet),  /* srcpropoffset: gmed index where extra sources start */
+        (uint)cfg->isnodalmua,
+        (uint)cfg->isnodalmusp
     };
 
     MCXReporter reporter = {0.f, 0};
@@ -326,6 +340,16 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
     {
         if (cfg->exportfield == NULL) {
             cfg->exportfield = mesh->weight;
+        }
+
+        /* Pre-allocate exportadjoint for RF imaginary part or adjoint Jacobian */
+        if (cfg->exportadjoint == NULL && cfg->method == rtBLBadouelGrid) {
+            if (isrfforward) {
+                /* For RF forward: stores imaginary fluence field of same size as real */
+                cfg->exportadjoint = (float*)calloc(fieldlen, sizeof(float));
+            } else if (MCX_IS_ADJOINT_TYPE(cfg->outputtype) && cfg->extrasrclen > 0) {
+                /* For adjoint Jacobian: allocate after simulation; leave as NULL for now */
+            }
         }
 
         if (cfg->exportdetected == NULL) {
@@ -403,7 +427,7 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
     oddphotons =
         (int)(cfg->nphoton * cfg->workload[gpuid] / (fullload * cfg->respin) -
               threadphoton * gpu[gpuid].autothread);
-    field = (float*)calloc(sizeof(float) * meshlen * 2, cfg->maxgate);
+    field = (float*)calloc(sizeof(float) * meshlen * (isrfforward ? 4 : 2), cfg->maxgate);
     dref = (float*)calloc(sizeof(float) * mesh->nf, cfg->maxgate);
     Pdet = (float*)calloc(cfg->maxdetphoton * sizeof(float), hostdetreclen);
 
@@ -449,19 +473,46 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
     CUDA_ASSERT(cudaMemcpy(gnormal, tracer->n, sizeof(float4) * (mesh->ne) * 4,
                            cudaMemcpyHostToDevice));
 
+    /* upload per-node mua/musp for DOT reconstruction modes (size mesh->nn) */
+    if (cfg->isnodalmua && cfg->nodemua) {
+        CUDA_ASSERT(cudaMalloc((void**)&gnodemua_cu, sizeof(float) * (mesh->nn)));
+        CUDA_ASSERT(cudaMemcpy(gnodemua_cu, cfg->nodemua, sizeof(float) * (mesh->nn),
+                               cudaMemcpyHostToDevice));
+    }
+
+    if (cfg->isnodalmusp && cfg->nodemusp) {
+        CUDA_ASSERT(cudaMalloc((void**)&gnodemusp_cu, sizeof(float) * (mesh->nn)));
+        CUDA_ASSERT(cudaMemcpy(gnodemusp_cu, cfg->nodemusp, sizeof(float) * (mesh->nn),
+                               cudaMemcpyHostToDevice));
+    }
+
     // gparam
     CUDA_ASSERT(cudaMemcpyToSymbol(gcfg, &param, sizeof(MCXParam), 0, cudaMemcpyHostToDevice));
+
+    /* Upload media, extra sources, and detectors to gmed[] constant memory.
+     * Layout: [media 0..prop] | [extra sources, each 4 Medium slots] | [detector positions] | [normals] */
+    uint srcpropoffset = (uint)(mesh->prop + 1 + cfg->isextdet);
+    uint detpropoffset = srcpropoffset + (uint)(cfg->extrasrclen * 4);
+
+    if (detpropoffset + cfg->detnum + (param.normbuf << 2) >= MAX_PROP) {
+        mcx_error(-5, "Total tissue types, extra sources, detectors and normals must fit in MAX_PROP slots", __FILE__, __LINE__);
+    }
+
     CUDA_ASSERT(cudaMemcpyToSymbol(gmed, mesh->med,
-                                   (mesh->prop + 1 + cfg->isextdet) * sizeof(Medium), 0,
+                                   srcpropoffset * sizeof(Medium), 0,
                                    cudaMemcpyHostToDevice));
 
-    if (cfg->detpos && cfg->detnum) {
-        if ((mesh->prop + 1 + cfg->isextdet) + cfg->detnum >= MAX_PROP) {
-            mcx_error(-5, "Total tissue type and detector count must be less than 2000", __FILE__, __LINE__);
-        }
+    /* Pack extra sources into gmed[] right after media; each ExtraSrc = 4 Medium slots */
+    if (cfg->extrasrclen > 0 && cfg->srcdata) {
+        CUDA_ASSERT(cudaMemcpyToSymbol(gmed, cfg->srcdata,
+                                       sizeof(ExtraSrc) * cfg->extrasrclen,
+                                       srcpropoffset * sizeof(Medium), cudaMemcpyHostToDevice));
+    }
 
+    if (cfg->detpos && cfg->detnum) {
         CUDA_ASSERT(cudaMemcpyToSymbol(gmed, cfg->detpos,
-                                       sizeof(float4)*cfg->detnum, (mesh->prop + 1 + cfg->isextdet) * sizeof(Medium),
+                                       sizeof(float4) * cfg->detnum,
+                                       detpropoffset * sizeof(Medium),
                                        cudaMemcpyHostToDevice));
     }
 
@@ -488,8 +539,8 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
                     gseed, Pseed, sizeof(uint) * gpu[gpuid].autothread * RAND_SEED_WORD_LEN,
                     cudaMemcpyHostToDevice));
 
-    CUDA_ASSERT(cudaMalloc((void**)&gweight, sizeof(float) * fieldlen * 2));
-    CUDA_ASSERT(cudaMemcpy(gweight, field, sizeof(float) * fieldlen * 2,
+    CUDA_ASSERT(cudaMalloc((void**)&gweight, sizeof(float) * fieldlen * (isrfforward ? 4 : 2)));
+    CUDA_ASSERT(cudaMemcpy(gweight, field, sizeof(float) * fieldlen * (isrfforward ? 4 : 2),
                            cudaMemcpyHostToDevice));
 
     CUDA_ASSERT(cudaMalloc((void**)&gdref, sizeof(float) * nflen));
@@ -610,11 +661,67 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
             param.tend = twindow1;
 
 
-            mmc_main_loop <<< mcgrid, mcblock, sharedmemsize>>>(
-                threadphoton, oddphotons, gnode, (int*)gelem, gweight, gdref,
-                gtype, (int*)gfacenb, gsrcelem, gnormal,
-                gdetphoton, gdetected, gseed, (int*)gprogress, genergy, greporter,
-                gsrcpattern, greplayweight, greplaytime, greplayseed, gphotonseed, gdebugdata);
+            /* Template-dispatch on persistent per-photon state: each flag gates
+             * register-resident state across the photon lifetime, letting ptxas
+             * dead-code-eliminate unused features. NODAL_USE_MUA/MUSP are now
+             * runtime reads from gcfg (their lifetime is too short to affect
+             * peak register pressure). 8 instantiations enumerated below.
+             *
+             *   IS_RF          - cfg.omega>0 and not replay
+             *   IS_MULTISRC    - cfg.srcnum>1 or (extrasrclen>0 && srcid<=0)
+             *   SAVE_DETPHOTON - cfg.issavedet */
+            const int is_rf = (cfg->omega > 0.f && cfg->seed != SEED_FROM_FILE) ? 1 : 0;
+            /* IS_MULTISRC includes pattern source (uses r->posidx for srcpattern[] lookup)
+             * alongside pattern-multi-source (srcnum>1) and adjoint multi-source. */
+            const int is_ms = (cfg->srctype == stPattern || cfg->srctype == stPattern3D
+                               || cfg->srcnum > 1
+                               || (cfg->extrasrclen > 0 && cfg->srcid <= 0)) ? 1 : 0;
+            const int save_dp = cfg->issavedet ? 1 : 0;
+            const int variant = (is_rf << 2) | (is_ms << 1) | save_dp;
+
+#define MMC_DISPATCH(RF, MS, SD) \
+    mmc_main_loop<RF, MS, SD> <<< mcgrid, mcblock, sharedmemsize>>>( \
+            threadphoton, oddphotons, gnode, (int*)gelem, gweight, gdref, \
+            gtype, (int*)gfacenb, gsrcelem, gnormal, \
+            gnodemua_cu, gnodemusp_cu, \
+            gdetphoton, gdetected, gseed, (int*)gprogress, genergy, greporter, \
+            gsrcpattern, greplayweight, greplaytime, greplayseed, gphotonseed, gdebugdata)
+
+            switch (variant) {
+                case 0:
+                    MMC_DISPATCH(0, 0, 0);
+                    break;
+
+                case 1:
+                    MMC_DISPATCH(0, 0, 1);
+                    break;
+
+                case 2:
+                    MMC_DISPATCH(0, 1, 0);
+                    break;
+
+                case 3:
+                    MMC_DISPATCH(0, 1, 1);
+                    break;
+
+                case 4:
+                    MMC_DISPATCH(1, 0, 0);
+                    break;
+
+                case 5:
+                    MMC_DISPATCH(1, 0, 1);
+                    break;
+
+                case 6:
+                    MMC_DISPATCH(1, 1, 0);
+                    break;
+
+                case 7:
+                    MMC_DISPATCH(1, 1, 1);
+                    break;
+            }
+
+#undef MMC_DISPATCH
 
             #pragma omp master
             {
@@ -666,7 +773,7 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
             {
 
                 for (i = 0; i < gpu[gpuid].autothread; i++) {
-                    for (j = 0; j < (uint) cfg->srcnum; j++) {
+                    for (j = 0; j < cfg->srcnum; j++) {
                         cfg->energyesc[j] += energy[(i << 1) * cfg->srcnum + j];
                         cfg->energytot[j] += energy[((i << 1) + 1) * cfg->srcnum + j];
                         energyesc += energy[(i << 1) * cfg->srcnum + j];
@@ -760,16 +867,24 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
 
             // handling the 2pt distributions
             if (cfg->issave2pt) {
-                float* rawfield = (float*)malloc(sizeof(float) * fieldlen * 2);
+                int rfmul = isrfforward ? 4 : 2;
+                float* rawfield = (float*)malloc(sizeof(float) * fieldlen * rfmul);
 
-                CUDA_ASSERT(cudaMemcpy(rawfield, gweight, sizeof(float) * fieldlen * 2,
+                CUDA_ASSERT(cudaMemcpy(rawfield, gweight, sizeof(float) * fieldlen * rfmul,
                                        cudaMemcpyDeviceToHost));
                 MMC_FPRINTF(cfg->flog, "transfer complete:        %d ms\n",
                             GetTimeMillis() - tic);
                 mcx_fflush(cfg->flog);
 
-                for (i = 0; i < fieldlen; i++) { // accumulate field, can be done in the GPU
-                    field[i] += rawfield[i] + rawfield[i + fieldlen];    //+rawfield[i+fieldlen];
+                for (i = 0; i < fieldlen; i++) { // accumulate real field (double-buffer re1+re2)
+                    field[i] += rawfield[i] + rawfield[i + fieldlen];
+                }
+
+                if (isrfforward) {
+                    /* accumulate imaginary part from im1+im2 into field[fieldlen..] */
+                    for (i = 0; i < fieldlen; i++) {
+                        field[i + fieldlen] += rawfield[i + fieldlen * 2] + rawfield[i + fieldlen * 3];
+                    }
                 }
 
                 free(rawfield);
@@ -803,15 +918,56 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
                 for (uint i = 0; i < fieldlen; i++)
                     #pragma omp atomic
                     cfg->exportfield[i] += field[i];
-            } else {
-                for (i = 0; i < cfg->maxgate; i++) {
-                    for (j = 0; j < mesh->ne; j++) {
-                        for (srcid = 0; srcid < cfg->srcnum; srcid++) {
-                            float ww = field[(i * mesh->ne + j) * cfg->srcnum + srcid] * 0.25f;
-                            int k;
 
-                            for (k = 0; k < mesh->elemlen; k++) {
-                                cfg->exportfield[(i * mesh->nn + mesh->elem[j * mesh->elemlen + k] - 1) * cfg->srcnum + srcid] += ww;
+                /* RF forward: also store imaginary part in exportadjoint */
+                if (isrfforward && cfg->exportadjoint) {
+                    for (uint i = 0; i < fieldlen; i++) {
+                        #pragma omp atomic
+                        cfg->exportadjoint[i] += field[i + fieldlen];
+                    }
+                }
+            } else {
+                /* basisorder=1 mesh mode: redistribute per-element fluence onto nodes.
+                 * Kernel layout per slot (adjoint, srcnum=1, nsrcslots>1):
+                 *   field[eid + gate*ne + slot*ne*maxgate]
+                 * Pattern source layout (srcnum>1, nsrcslots=1):
+                 *   field[(gate*ne + eid)*srcnum + pidx]
+                 * Output layout (matches grid's slot_stride = datalen * maxgate convention):
+                 *   exportfield[node + gate*nn + slot*nn*maxgate]   (adjoint, srcnum=1)
+                 *   exportfield[(gate*nn + node)*srcnum + pidx]      (pattern,   nsrcslots=1)
+                 */
+                uint nslots = (uint)((cfg->extrasrclen > 0) ? cfg->extrasrclen : 1);
+
+                if (nslots > 1u && cfg->srcnum == 1) {
+                    for (uint slot = 0; slot < nslots; slot++) {
+                        size_t slot_off_f = (size_t)slot * (size_t)mesh->ne * (size_t)cfg->maxgate;
+                        size_t slot_off_e = (size_t)slot * (size_t)mesh->nn * (size_t)cfg->maxgate;
+
+                        for (i = 0; i < cfg->maxgate; i++) {
+                            size_t f_gate_off = (size_t)i * (size_t)mesh->ne;
+                            size_t e_gate_off = (size_t)i * (size_t)mesh->nn;
+
+                            for (j = 0; j < mesh->ne; j++) {
+                                float ww = field[slot_off_f + f_gate_off + j] * 0.25f;
+                                int k;
+
+                                for (k = 0; k < mesh->elemlen; k++) {
+                                    cfg->exportfield[slot_off_e + e_gate_off
+                                                                + mesh->elem[j * mesh->elemlen + k] - 1] += ww;
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (i = 0; i < cfg->maxgate; i++) {
+                        for (j = 0; j < mesh->ne; j++) {
+                            for (srcid = 0; srcid < cfg->srcnum; srcid++) {
+                                float ww = field[(i * mesh->ne + j) * cfg->srcnum + srcid] * 0.25f;
+                                int k;
+
+                                for (k = 0; k < mesh->elemlen; k++) {
+                                    cfg->exportfield[(i * mesh->nn + mesh->elem[j * mesh->elemlen + k] - 1) * cfg->srcnum + srcid] += ww;
+                                }
                             }
                         }
                     }
@@ -828,7 +984,7 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
         if (cfg->isnormalized) {
             double cur_normalizer, sum_normalizer = 0.0, energyabs = 0.0;
 
-            for (j = 0; j < cfg->srcnum; j++) {
+            for (j = 0; j < (uint)cfg->srcnum; j++) {
                 energyabs =  cfg->energytot[j] - cfg->energyesc[j];
                 cur_normalizer = mesh_normalize(mesh, cfg, energyabs, cfg->energytot[j], j);
                 sum_normalizer += cur_normalizer;
@@ -836,7 +992,406 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
                                        j + 1, cfg->energytot[j], 100.f * energyabs / cfg->energytot[j], cur_normalizer));
             }
 
-            cfg->his.normalizer = sum_normalizer / cfg->srcnum; // average normalizer value for all simulated sources
+            cfg->his.normalizer = sum_normalizer / cfg->srcnum;
+
+            /* Broadcast normalizor from slot 0 to the remaining adjoint slots
+             * (srcnum..extrasrclen-1). mesh_normalize only processes pair=0..srcnum-1;
+             * the multi-source/adjoint slots get scale = avg_normalizor (uniform launch
+             * weight means w0/wk = 1, so no per-slot weight ratio). Includes the per-node
+             * nvol division for basisorder=1 mesh mode. */
+            if (cfg->extrasrclen > cfg->srcnum && cfg->exportfield) {
+                double avg_normalizor = sum_normalizer / cfg->srcnum;
+                int mesh_basis1 = (cfg->method != rtBLBadouelGrid) && (cfg->basisorder != 0);
+                size_t datalen = (cfg->method == rtBLBadouelGrid)
+                                 ? (size_t)cfg->crop0.z
+                                 : (size_t)((cfg->basisorder) ? mesh->nn : mesh->ne);
+                size_t slot_stride = datalen * (size_t)cfg->maxgate;
+
+                for (int slot = cfg->srcnum; slot < cfg->extrasrclen; slot++) {
+                    if (mesh_basis1) {
+                        for (int t = 0; t < cfg->maxgate; t++) {
+                            for (int jj = 0; jj < (int)datalen; jj++) {
+                                size_t idx = (size_t)slot * slot_stride + (size_t)t * datalen + jj;
+
+                                if (mesh->nvol[jj] > 0.f) {
+                                    cfg->exportfield[idx] /= mesh->nvol[jj];
+                                }
+
+                                cfg->exportfield[idx] *= avg_normalizor;
+                            }
+                        }
+                    } else {
+                        for (size_t ki = 0; ki < slot_stride; ki++) {
+                            cfg->exportfield[(size_t)slot * slot_stride + ki] *= avg_normalizor;
+                        }
+                    }
+                }
+            }
+
+            /* RF imag fluence broadcast: same as the real-fluence block above
+             * but applied to cfg->exportadjoint for slots srcnum..extrasrclen-1. */
+            if (isrfforward && cfg->exportadjoint && cfg->extrasrclen > cfg->srcnum) {
+                float normalizer = (float)(sum_normalizer / cfg->srcnum);
+                int mesh_basis1 = (cfg->method != rtBLBadouelGrid) && (cfg->basisorder != 0);
+                size_t datalen = (cfg->method == rtBLBadouelGrid)
+                                 ? (size_t)cfg->crop0.z
+                                 : (size_t)((cfg->basisorder) ? mesh->nn : mesh->ne);
+                size_t slot_stride = datalen * (size_t)cfg->maxgate;
+
+                for (int slot = cfg->srcnum; slot < cfg->extrasrclen; slot++) {
+                    if (mesh_basis1) {
+                        for (int t = 0; t < cfg->maxgate; t++) {
+                            for (int jj = 0; jj < (int)datalen; jj++) {
+                                size_t idx = (size_t)slot * slot_stride + (size_t)t * datalen + jj;
+
+                                if (mesh->nvol[jj] > 0.f) {
+                                    cfg->exportadjoint[idx] /= mesh->nvol[jj];
+                                }
+
+                                cfg->exportadjoint[idx] *= normalizer;
+                            }
+                        }
+                    } else {
+                        for (size_t ki = 0; ki < slot_stride; ki++) {
+                            cfg->exportadjoint[(size_t)slot * slot_stride + ki] *= normalizer;
+                        }
+                    }
+                }
+            }
+        }
+
+        /* Mesh-mode adjoint Jacobian post-processing: FEM/nodal formulas on tet mesh.
+         * Requires basisorder=1 (nodal fluence) so phi values are well-defined per node.
+         * J_mua: either full FEM (rb_femjacobian) or nodal approximation (rbjacmuafast).
+         * J_D:   always full FEM (no nodal-approx form). */
+        if (cfg->issave2pt && MCX_IS_ADJOINT_TYPE(cfg->outputtype) && cfg->method != rtBLBadouelGrid &&
+                cfg->basisorder && cfg->extrasrclen > 0 && cfg->detdir != NULL && cfg->exportfield) {
+            unsigned int Ns = (unsigned int)(cfg->extrasrclen - cfg->detnum);
+            unsigned int Nd = (unsigned int)cfg->detnum;
+            int isdual  = MCX_IS_DUAL_ADJOINT_TYPE(cfg->outputtype);
+            int isnodal_approx = (cfg->adjointmode == 1);    /* nodal-adjoint approximation */
+            /* output domain: node-based for both basisorder=1 full FEM (after elem→node scatter)
+             * and the nodal approximation; element-based not currently exposed in mesh mode */
+            unsigned int datalen = (unsigned int)mesh->nn;
+            size_t adjointlen = (size_t)datalen * Ns * Nd;
+            size_t single_exportlen = adjointlen * (isrfforward ? 2 : 1);
+            size_t exportlen_adj    = single_exportlen * (isdual ? 2 : 1);
+
+            /* Convert double exportfield to float for GPU processing.
+             * exportfield (= mesh->weight) is node-major for basisorder=1, sized
+             * nn * extrasrclen * maxgate -- NOT fieldlen, which is sized on
+             * mesh->ne (the kernel field buffer stride). Reading fieldlen
+             * doubles walks past the allocation. */
+            size_t nodefield_len = (size_t)datalen * (size_t)cfg->extrasrclen * (size_t)cfg->maxgate;
+
+            float* hfield_re = (float*)malloc(sizeof(float) * nodefield_len);
+            float* hfield_im = isrfforward ? (float*)malloc(sizeof(float) * nodefield_len) : NULL;
+
+            for (size_t k = 0; k < nodefield_len; k++) {
+                hfield_re[k] = (float)cfg->exportfield[k];
+            }
+
+            if (isrfforward && cfg->exportadjoint) {
+                for (size_t k = 0; k < nodefield_len; k++) {
+                    hfield_im[k] = cfg->exportadjoint[k];
+                }
+            }
+
+            float* gfield_re_cu = NULL, *gfield_im_cu = NULL;
+            float* gjmua_cu = NULL, *gjd_cu = NULL;
+            CUDA_ASSERT(cudaMalloc((void**)&gfield_re_cu, sizeof(float) * nodefield_len));
+            CUDA_ASSERT(cudaMemcpy(gfield_re_cu, hfield_re, sizeof(float) * nodefield_len, cudaMemcpyHostToDevice));
+            free(hfield_re);
+
+            if (hfield_im) {
+                CUDA_ASSERT(cudaMalloc((void**)&gfield_im_cu, sizeof(float) * nodefield_len));
+                CUDA_ASSERT(cudaMemcpy(gfield_im_cu, hfield_im, sizeof(float) * nodefield_len, cudaMemcpyHostToDevice));
+                free(hfield_im);
+            }
+
+            /* Upload mesh helpers (elem, evol, deldotdel, nvol) to device */
+            int* gelem_jac = NULL;
+            float* gevol_jac = NULL;
+            float* gdeldotdel_jac = NULL;
+            float* gnvol_jac = NULL;
+            int compute_jmua = (cfg->outputtype == otAdjoint || isdual);
+            int compute_jd   = (cfg->outputtype == otAdjointDcoeff || isdual);
+
+            /* upload elem (int4 -> int*) */
+            CUDA_ASSERT(cudaMalloc((void**)&gelem_jac, sizeof(int) * mesh->ne * mesh->elemlen));
+            CUDA_ASSERT(cudaMemcpy(gelem_jac, mesh->elem, sizeof(int) * mesh->ne * mesh->elemlen, cudaMemcpyHostToDevice));
+
+            /* upload evol */
+            CUDA_ASSERT(cudaMalloc((void**)&gevol_jac, sizeof(float) * mesh->ne));
+            CUDA_ASSERT(cudaMemcpy(gevol_jac, mesh->evol, sizeof(float) * mesh->ne, cudaMemcpyHostToDevice));
+
+            if (compute_jd || !isnodal_approx) {
+                /* deldotdel needed for J_D (always) and for full-FEM J_mua */
+                if (mesh->deldotdel == NULL) {
+                    mesh_deldotdel(mesh);
+                }
+
+                float* deldotdel_f = (float*)malloc(sizeof(float) * mesh->ne * 10);
+
+                for (size_t k = 0; k < (size_t)mesh->ne * 10; k++) {
+                    deldotdel_f[k] = (float)mesh->deldotdel[k];
+                }
+
+                CUDA_ASSERT(cudaMalloc((void**)&gdeldotdel_jac, sizeof(float) * mesh->ne * 10));
+                CUDA_ASSERT(cudaMemcpy(gdeldotdel_jac, deldotdel_f, sizeof(float) * mesh->ne * 10, cudaMemcpyHostToDevice));
+                free(deldotdel_f);
+            }
+
+            if (isnodal_approx && compute_jmua) {
+                CUDA_ASSERT(cudaMalloc((void**)&gnvol_jac, sizeof(float) * mesh->nn));
+                CUDA_ASSERT(cudaMemcpy(gnvol_jac, mesh->nvol, sizeof(float) * mesh->nn, cudaMemcpyHostToDevice));
+            }
+
+            if (compute_jmua) {
+                CUDA_ASSERT(cudaMalloc((void**)&gjmua_cu, sizeof(float) * single_exportlen));
+                CUDA_ASSERT(cudaMemset(gjmua_cu, 0, sizeof(float) * single_exportlen));
+            }
+
+            if (compute_jd) {
+                CUDA_ASSERT(cudaMalloc((void**)&gjd_cu, sizeof(float) * single_exportlen));
+                CUDA_ASSERT(cudaMemset(gjd_cu, 0, sizeof(float) * single_exportlen));
+            }
+
+            size_t adjblocksize = 256;
+
+            if (isnodal_approx && compute_jmua) {
+                /* nodal approximation J_mua kernel: one thread per node */
+                size_t adjgridsize = ((size_t)mesh->nn + adjblocksize - 1) / adjblocksize;
+                mmc_adjoint_mesh_nodal_kernel <<< (unsigned int)adjgridsize, (unsigned int)adjblocksize>>>(
+                    gfield_re_cu, gfield_im_cu, gnvol_jac, gjmua_cu,
+                    (unsigned int)mesh->nn, (unsigned int)cfg->maxgate, Ns, Nd);
+                CUDA_ASSERT(cudaDeviceSynchronize());
+            }
+
+            if ((!isnodal_approx && compute_jmua) || compute_jd) {
+                /* full FEM kernel: one thread per element; nodal output via atomic scatter */
+                size_t adjgridsize = ((size_t)mesh->ne + adjblocksize - 1) / adjblocksize;
+                mmc_adjoint_mesh_full_kernel <<< (unsigned int)adjgridsize, (unsigned int)adjblocksize>>>(
+                    gfield_re_cu, gfield_im_cu,
+                    gelem_jac, gevol_jac, gdeldotdel_jac,
+                    (isnodal_approx ? NULL : gjmua_cu),  /* skip J_mua here if nodal-approx already ran */
+                    gjd_cu,
+                    (unsigned int)mesh->ne, (unsigned int)mesh->nn, (unsigned int)cfg->maxgate,
+                    Ns, Nd, (unsigned int)mesh->elemlen,
+                    /*isnodal*/ 1);
+                CUDA_ASSERT(cudaDeviceSynchronize());
+            }
+
+            CUDA_ASSERT(cudaFree(gfield_re_cu));
+
+            if (gfield_im_cu) {
+                CUDA_ASSERT(cudaFree(gfield_im_cu));
+            }
+
+            CUDA_ASSERT(cudaFree(gelem_jac));
+            CUDA_ASSERT(cudaFree(gevol_jac));
+
+            if (gdeldotdel_jac) {
+                CUDA_ASSERT(cudaFree(gdeldotdel_jac));
+            }
+
+            if (gnvol_jac) {
+                CUDA_ASSERT(cudaFree(gnvol_jac));
+            }
+
+            /* Allocate output buffer and copy back */
+            if (cfg->exportjacob) {
+                free(cfg->exportjacob);
+            }
+
+            cfg->exportjacob = (float*)malloc(sizeof(float) * exportlen_adj);
+            memset(cfg->exportjacob, 0, sizeof(float) * exportlen_adj);
+
+            float* hmua = NULL, *hjd = NULL;
+
+            if (compute_jmua) {
+                hmua = (float*)malloc(sizeof(float) * single_exportlen);
+                CUDA_ASSERT(cudaMemcpy(hmua, gjmua_cu, sizeof(float) * single_exportlen, cudaMemcpyDeviceToHost));
+                CUDA_ASSERT(cudaFree(gjmua_cu));
+            }
+
+            if (compute_jd) {
+                hjd = (float*)malloc(sizeof(float) * single_exportlen);
+                CUDA_ASSERT(cudaMemcpy(hjd, gjd_cu, sizeof(float) * single_exportlen, cudaMemcpyDeviceToHost));
+                CUDA_ASSERT(cudaFree(gjd_cu));
+            }
+
+            /* Pack into cfg->exportjacob using same layout as grid path:
+             *   CW non-dual:    [Re_J1]
+             *   CW dual:        [Re_J1, Re_J2]
+             *   RF non-dual:    [Re_J1, Im_J1]
+             *   RF dual:        [Re_J1, Re_J2, Im_J1, Im_J2] */
+            if (isdual) {
+                if (!isrfforward) {
+                    memcpy(cfg->exportjacob,              hmua, adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + adjointlen, hjd,  adjointlen * sizeof(float));
+                } else {
+                    memcpy(cfg->exportjacob,                  hmua,              adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + adjointlen,     hjd,               adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + 2 * adjointlen, hmua + adjointlen, adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + 3 * adjointlen, hjd + adjointlen,  adjointlen * sizeof(float));
+                }
+            } else {
+                float* hsrc = compute_jmua ? hmua : hjd;
+                memcpy(cfg->exportjacob, hsrc, single_exportlen * sizeof(float));
+            }
+
+            if (hmua) {
+                free(hmua);
+            }
+
+            if (hjd) {
+                free(hjd);
+            }
+
+            MMC_FPRINTF(cfg->flog, "mesh adjoint Jacobian computation complete (%s): %d ms\n",
+                        isnodal_approx ? "nodal approx" : "full FEM", GetTimeMillis() - tic);
+
+#ifndef MCX_CONTAINER
+
+            if (cfg->issave2pt && cfg->parentid == mpStandalone && cfg->exportjacob) {
+                MMC_FPRINTF(cfg->flog, "saving mesh adjoint Jacobian to file ...\t");
+                mesh_savejacob(cfg, mesh, cfg->exportjacob, (int)Ns, (int)Nd, isrfforward, isdual);
+                MMC_FPRINTF(cfg->flog, "saving Jacobian complete : %d ms\n\n", GetTimeMillis() - tic);
+                mcx_fflush(cfg->flog);
+            }
+
+#endif
+        }
+
+        /* Adjoint Jacobian post-processing (grid mode only) */
+        if (cfg->issave2pt && MCX_IS_ADJOINT_TYPE(cfg->outputtype) && cfg->method == rtBLBadouelGrid &&
+                cfg->extrasrclen > 0 && cfg->detdir != NULL && cfg->exportfield) {
+            unsigned int Ns = (unsigned int)(cfg->extrasrclen - cfg->detnum);
+            unsigned int Nd = (unsigned int)cfg->detnum;
+            unsigned int pure_voxels = (unsigned int)cfg->crop0.z;
+            int isdual  = MCX_IS_DUAL_ADJOINT_TYPE(cfg->outputtype);
+
+            size_t adjointlen = (size_t)pure_voxels * Ns * Nd;
+            size_t single_exportlen = adjointlen * (isrfforward ? 2 : 1);
+            size_t exportlen_adj    = single_exportlen * (isdual ? 2 : 1);
+
+            /* Convert double exportfield to float for GPU processing */
+            float* hfield_re = (float*)malloc(sizeof(float) * fieldlen);
+            float* hfield_im = isrfforward ? (float*)malloc(sizeof(float) * fieldlen) : NULL;
+
+            for (size_t k = 0; k < fieldlen; k++) {
+                hfield_re[k] = (float)cfg->exportfield[k];
+            }
+
+            if (isrfforward && cfg->exportadjoint) {
+                for (size_t k = 0; k < fieldlen; k++) {
+                    hfield_im[k] = cfg->exportadjoint[k];
+                }
+            }
+
+            float* gfield_re_cu = NULL, *gfield_im_cu = NULL;
+            float* gadjoint_mua_cu = NULL, *gadjoint_tmp_cu = NULL;
+            CUDA_ASSERT(cudaMalloc((void**)&gfield_re_cu, sizeof(float) * fieldlen));
+            CUDA_ASSERT(cudaMemcpy(gfield_re_cu, hfield_re, sizeof(float) * fieldlen, cudaMemcpyHostToDevice));
+            free(hfield_re);
+
+            if (hfield_im) {
+                CUDA_ASSERT(cudaMalloc((void**)&gfield_im_cu, sizeof(float) * fieldlen));
+                CUDA_ASSERT(cudaMemcpy(gfield_im_cu, hfield_im, sizeof(float) * fieldlen, cudaMemcpyHostToDevice));
+                free(hfield_im);
+            }
+
+            if (isdual) {
+                CUDA_ASSERT(cudaMalloc((void**)&gadjoint_mua_cu, sizeof(float) * single_exportlen));
+                CUDA_ASSERT(cudaMemset(gadjoint_mua_cu, 0, sizeof(float) * single_exportlen));
+            }
+
+            CUDA_ASSERT(cudaMalloc((void**)&gadjoint_tmp_cu, sizeof(float) * single_exportlen));
+            CUDA_ASSERT(cudaMemset(gadjoint_tmp_cu, 0, sizeof(float) * single_exportlen));
+
+            size_t adjblocksize = 256;
+            size_t adjgridsize  = (pure_voxels + (unsigned int)adjblocksize - 1) / adjblocksize;
+
+            if (isdual || cfg->outputtype == otAdjoint) {
+                mmc_adjoint_kernel <<< (unsigned int)adjgridsize, (unsigned int)adjblocksize>>>(
+                    gfield_re_cu, gfield_im_cu,
+                    isdual ? gadjoint_mua_cu : gadjoint_tmp_cu,
+                    pure_voxels, (unsigned int)cfg->maxgate, Ns, Nd);
+                CUDA_ASSERT(cudaDeviceSynchronize());
+            }
+
+            if (isdual || cfg->outputtype != otAdjoint) {
+                mmc_adjoint_dcoeff_kernel <<< (unsigned int)adjgridsize, (unsigned int)adjblocksize>>>(
+                    gfield_re_cu, gfield_im_cu, gadjoint_tmp_cu,
+                    pure_voxels, (unsigned int)cfg->maxgate, Ns, Nd,
+                    (unsigned int)cfg->dim.x, (unsigned int)cfg->dim.y);
+                CUDA_ASSERT(cudaDeviceSynchronize());
+            }
+
+            CUDA_ASSERT(cudaFree(gfield_re_cu));
+
+            if (gfield_im_cu) {
+                CUDA_ASSERT(cudaFree(gfield_im_cu));
+            }
+
+            /* Allocate separate Jacobian buffer; exportadjoint keeps RF imaginary fluence */
+            if (cfg->exportjacob) {
+                free(cfg->exportjacob);
+            }
+
+            cfg->exportjacob = (float*)malloc(sizeof(float) * exportlen_adj);
+
+            float Vvox = cfg->unitinmm * cfg->unitinmm * cfg->unitinmm;
+
+            if (isdual) {
+                float* hmua    = (float*)malloc(sizeof(float) * single_exportlen);
+                float* hsecond = (float*)malloc(sizeof(float) * single_exportlen);
+                CUDA_ASSERT(cudaMemcpy(hmua,    gadjoint_mua_cu, sizeof(float) * single_exportlen, cudaMemcpyDeviceToHost));
+                CUDA_ASSERT(cudaMemcpy(hsecond, gadjoint_tmp_cu, sizeof(float) * single_exportlen, cudaMemcpyDeviceToHost));
+                CUDA_ASSERT(cudaFree(gadjoint_mua_cu));
+                CUDA_ASSERT(cudaFree(gadjoint_tmp_cu));
+
+                for (size_t k = 0; k < single_exportlen; k++) {
+                    hmua[k]    *= -Vvox;
+                    hsecond[k] *= -cfg->unitinmm;
+                }
+
+                if (!isrfforward) {
+                    memcpy(cfg->exportjacob,              hmua,    adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + adjointlen, hsecond, adjointlen * sizeof(float));
+                } else {
+                    memcpy(cfg->exportjacob,                   hmua,                 adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + adjointlen,      hsecond,              adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + 2 * adjointlen,  hmua + adjointlen,    adjointlen * sizeof(float));
+                    memcpy(cfg->exportjacob + 3 * adjointlen,  hsecond + adjointlen, adjointlen * sizeof(float));
+                }
+
+                free(hmua);
+                free(hsecond);
+            } else {
+                CUDA_ASSERT(cudaMemcpy(cfg->exportjacob, gadjoint_tmp_cu, sizeof(float) * single_exportlen, cudaMemcpyDeviceToHost));
+                CUDA_ASSERT(cudaFree(gadjoint_tmp_cu));
+
+                float adj_scale = (cfg->outputtype == otAdjoint) ? -Vvox : -cfg->unitinmm;
+
+                for (size_t k = 0; k < single_exportlen; k++) {
+                    cfg->exportjacob[k] *= adj_scale;
+                }
+            }
+
+            MMC_FPRINTF(cfg->flog, "adjoint Jacobian computation complete: %d ms\n", GetTimeMillis() - tic);
+
+#ifndef MCX_CONTAINER
+
+            if (cfg->issave2pt && cfg->parentid == mpStandalone && cfg->exportjacob) {
+                MMC_FPRINTF(cfg->flog, "saving adjoint Jacobian to file ...\t");
+                mesh_savejacob(cfg, mesh, cfg->exportjacob, (int)Ns, (int)Nd, isrfforward, isdual);
+                MMC_FPRINTF(cfg->flog, "saving Jacobian complete : %d ms\n\n", GetTimeMillis() - tic);
+                mcx_fflush(cfg->flog);
+            }
+
+#endif
         }
 
 #ifndef MCX_CONTAINER
@@ -851,13 +1406,15 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
 
         if (cfg->issavedet && cfg->parentid == mpStandalone &&
                 cfg->exportdetected) {
+            MMC_FPRINTF(cfg->flog, "saving detected photon data to file ...\t");
             cfg->his.totalphoton = cfg->nphoton;
             cfg->his.unitinmm = cfg->unitinmm;
             cfg->his.savedphoton = cfg->detectedcount;
             cfg->his.detected = cfg->detectedcount;
             cfg->his.colcount = (2 + (cfg->ismomentum > 0)) * cfg->his.maxmedia + (cfg->issaveexit > 0) * 6 + 2; /*column count=maxmedia+3*/
-            mesh_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount,
-                               (sizeof(uint64_t) * RAND_BUF_LEN), cfg);
+            cfg->his.seedbyte = (cfg->exportseed) ? (sizeof(RandType) * RAND_BUF_LEN) : 0;
+            mcx_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount, 0, cfg);
+            MMC_FPRINTF(cfg->flog, "saving detected photon data complete : %d ms\n\n", GetTimeMillis() - tic);
         }
 
         /**
@@ -866,11 +1423,13 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
          */
 
         if ((cfg->debuglevel & dlTraj) && cfg->parentid == mpStandalone && cfg->exportdebugdata) {
+            MMC_FPRINTF(cfg->flog, "saving trajectory data to file ...\t");
             cfg->his.colcount = MCX_DEBUG_REC_LEN;
             cfg->his.savedphoton = cfg->debugdatalen;
             cfg->his.totalphoton = cfg->nphoton;
             cfg->his.detected = 0;
-            mesh_savedetphoton(cfg->exportdebugdata, NULL, cfg->debugdatalen, 0, cfg);
+            mcx_savedetphoton(cfg->exportdebugdata, NULL, cfg->debugdatalen, 0, cfg);
+            MMC_FPRINTF(cfg->flog, "saving trajectory data complete : %d ms\n\n", GetTimeMillis() - tic);
         }
 
         if (cfg->issaveref) {
@@ -901,6 +1460,15 @@ are more than what your have specified (%d), please use the --maxjumpdebug optio
     CUDA_ASSERT(cudaFree(gfacenb));
     CUDA_ASSERT(cudaFree(gsrcelem));
     CUDA_ASSERT(cudaFree(gnormal));
+
+    if (gnodemua_cu) {
+        CUDA_ASSERT(cudaFree(gnodemua_cu));
+    }
+
+    if (gnodemusp_cu) {
+        CUDA_ASSERT(cudaFree(gnodemusp_cu));
+    }
+
     CUDA_ASSERT(cudaFree(gseed));
     CUDA_ASSERT(cudaFree(gdetphoton));
     CUDA_ASSERT(cudaFree(gweight));

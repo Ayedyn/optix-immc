@@ -134,9 +134,33 @@ int mmc_cleanup(mcconfig* cfg, tetmesh* mesh, raytracer* tracer) {
  */
 
 int mmc_prep(mcconfig* cfg, tetmesh* mesh, raytracer* tracer) {
+    /* Mesh-mode adjoint Jacobian needs nodal fluence (basisorder=1) so that
+     * phi(node) is well-defined and ∇φ is non-zero inside each tet. */
+    if (MCX_IS_ADJOINT_TYPE(cfg->outputtype) && cfg->method != rtBLBadouelGrid && cfg->basisorder != 1) {
+        MMC_ERROR(-4, "mesh-mode adjoint Jacobian requires basisorder=1 (nodal fluence); "
+                  "use cfg.method='grid' or set cfg.basisorder=1");
+    }
+
     mcx_prep(cfg);
     tracer_init(tracer, mesh, cfg->method);
     tracer_prep(tracer, cfg);
+
+    /* Multi-source / adjoint mode: pre-compute per-slot initial element index.
+     * Otherwise launchnewphoton would use gcfg->e0 (= source-1's tet) for every
+     * slot, corrupting deposits for slots whose launch position isn't inside
+     * that single tet. Stashed into srcdata[slot].srcparam2.w and read back by
+     * the kernel. Shared across mmclab / pmmc / mmc-binary because all entry
+     * points reach this function. */
+    mesh_init_srcdata_eid(mesh, cfg);
+
+    /* Precompute <grad(phi_i).grad(phi_j)>*Ve for mesh-mode adjoint Jacobian.
+     * Required for J_D in elem/node-based mesh adjoint outputs (mcx-style
+     * grid adjoint uses finite differences instead and does not need this). */
+    if (MCX_IS_ADJOINT_TYPE(cfg->outputtype) && cfg->method != rtBLBadouelGrid
+            && mesh->ne > 0 && mesh->node && mesh->elem && mesh->evol && mesh->deldotdel == NULL) {
+        mesh_deldotdel(mesh);
+    }
+
     return 0;
 }
 
@@ -392,7 +416,7 @@ int mmc_run_mp(mcconfig* cfg, tetmesh* mesh, raytracer* tracer) {
 #ifndef MCX_CONTAINER
 
         if (cfg->issaveexit) {
-            mesh_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount, (sizeof(RandType)*RAND_BUF_LEN), cfg);
+            mcx_savedetphoton(cfg->exportdetected, (void*)(cfg->exportseed), cfg->detectedcount, (sizeof(RandType)*RAND_BUF_LEN), cfg);
         }
 
 #endif
@@ -426,11 +450,13 @@ int mmc_run_mp(mcconfig* cfg, tetmesh* mesh, raytracer* tracer) {
     }
 
     if ((cfg->debuglevel & dlTraj) && cfg->parentid == mpStandalone && cfg->exportdebugdata) {
+        MMC_FPRINTF(cfg->flog, "saving trajectory data to file ...\t");
         cfg->his.colcount = MCX_DEBUG_REC_LEN;
         cfg->his.savedphoton = cfg->debugdatalen;
         cfg->his.totalphoton = cfg->nphoton;
         cfg->his.detected = 0;  // this flag tells mcx_savedetphoton that the data is trajectory
-        mesh_savedetphoton(cfg->exportdebugdata, NULL, cfg->debugdatalen, 0, cfg);
+        mcx_savedetphoton(cfg->exportdebugdata, NULL, cfg->debugdatalen, 0, cfg);
+        MMC_FPRINTF(cfg->flog, "saving trajectory data complete : %d ms\n\n", GetTimeMillis() - t0);
     }
 
 #endif

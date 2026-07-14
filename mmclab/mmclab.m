@@ -35,6 +35,19 @@ function varargout = mmclab(varargin)
 %         option='opencl':  force using OpenCL (set cfg.gpuid=1 if not set)
 %                           instead of SSE on CPUs/GPUs that support OpenCL
 %
+%    if one defines USE_MCXCL in the MATLAB/Octave base workspace, mmclab
+%    inspects it before every call:
+%        USE_MCXCL = 1   (or unset)   default: run on the first GPU/device
+%        USE_MCXCL = 0                identical to the default for mmclab
+%                                      (mmc.mex is unified - no CUDA/OpenCL
+%                                      switch). Provided for mcxlabcl parity.
+%        USE_MCXCL = N  with |N| > 1  override cfg.gpuid with abs(N) so that
+%                                      every cfg in the input runs on device
+%                                      N (1-based, matches gpuinfo numbering).
+%                                      Useful for selecting one specific GPU
+%                                      on multi-GPU systems without editing
+%                                      every script's cfg.gpuid.
+%
 %
 %    cfg may contain the following fields:
 %
@@ -282,6 +295,19 @@ end
 
 if (isstruct(varargin{1}))
     for i = 1:length(varargin{1})
+        % USE_MCXCL = N with |N| > 1 in the base workspace selects the
+        % default device for every cfg in this call (parallel to
+        % mcxcl/mcxlabcl/mcxlabcl.m). USE_MCXCL = 0 / 1 leaves cfg.gpuid
+        % alone (gpuid stays at whatever the cfg sets, or the mex default).
+        % Keyed off the raw defaultocl rather than useopencl so that
+        % option='prep'/'preview'/'cuda' (which reset useopencl=0) still
+        % see the device override applied to the returned cfg.
+        if (defaultocl < 0)
+            varargin{1}(i).gpuid = -defaultocl;
+        elseif (defaultocl > 1)
+            varargin{1}(i).gpuid = defaultocl;
+        end
+
         castlist = {'srcpattern', 'srcpos', 'detpos', 'prop', 'workload', 'srcdir'};
         for j = 1:length(castlist)
             if (isfield(varargin{1}(i), castlist{j}))
@@ -337,12 +363,14 @@ for i = 1:len
     if (~isfield(cfg(i), 'evol') || isempty(cfg(i).evol))
         cfg(i).evol = elemvolume(cfg(i).node, cfg(i).elem);
     end
-    if (find(cfg(i).evol == 0))
-        fprintf(1, ['degenerated elements are detected: [' sprintf('%d ', find(cfg(i).evol == 0)) ']\n']);
-        error(['input mesh can not contain degenerated elements, ' ...
-               'please double check your input mesh; if you use a ' ...
-               'widefield source, please rerun mmcsrcdomain and setting ' ...
-               '''Expansion'' option to a larger value (default is 1)']);
+    if (~(isfield(cfg(i), 'compute') && strcmp(cfg(i).compute, 'optix')))
+        if (find(cfg(i).evol == 0))
+            fprintf(1, ['degenerated elements are detected: [' sprintf('%d ', find(cfg(i).evol == 0)) ']\n']);
+            error(['input mesh can not contain degenerated elements, ' ...
+                   'please double check your input mesh; if you use a ' ...
+                   'widefield source, please rerun mmcsrcdomain and setting ' ...
+                   '''Expansion'' option to a larger value (default is 1)']);
+        end
     end
     if (~isfield(cfg(i), 'srcpos'))
         error('cfg.srcpos field is missing');
@@ -351,11 +379,16 @@ for i = 1:len
         error('cfg.srcdir field is missing');
     end
     if (~isfield(cfg(i), 'e0') || isempty(cfg(i).e0))
-        cfg(i).e0 = tsearchn(cfg(i).node, cfg(i).elem, cfg(i).srcpos);
+        % For multi-source (Mx{3,4} srcpos / srcdir), only the first row
+        % populates cfg.srcpos in the mex container; the remaining rows
+        % go into cfg.srcdata[] and are looked up per-photon at launch
+        % time inside the GPU kernel. Pass only the first 3 coordinates
+        % to tsearchn so the e0 hint is for the main source slot.
+        cfg(i).e0 = tsearchn(cfg(i).node, cfg(i).elem, cfg(i).srcpos(1, 1:3));
     end
     if ((isnan(cfg(i).e0) && (isfield(cfg(i), 'srctype') && strcmp(cfg(i).srctype, 'pencil'))) || ischar(cfg(i).e0))
         disp('searching initial element ...');
-        [cfg(i).srcpos, cfg(i).e0] = mmcraytrace(cfg(i).node, cfg(i).elem, cfg(i).srcpos, cfg(i).srcdir, cfg(i).e0);
+        [cfg(i).srcpos(1, 1:3), cfg(i).e0] = mmcraytrace(cfg(i).node, cfg(i).elem, cfg(i).srcpos(1, 1:3), cfg(i).srcdir(1, 1:3), cfg(i).e0);
     end
     if ((isfield(cfg(i), 'srctype') && strcmp(cfg(i).srctype, 'pattern')) && (ndims(cfg(i).srcpattern) == 2))
         cfg(i).srcpattern = reshape(cfg(i).srcpattern, ...
@@ -372,17 +405,13 @@ for i = 1:len
                         'srcparam1', cfg.srcparam1, 'srcparam2', cfg.srcparam2);
         sdom = mmcsrcdomain(srcdef, [min(cfg.node); max(cfg.node)]);
         isinside = ismember(round(sdom * 1e10) * 1e-10, round(cfg(i).node * 1e10) * 1e-10, 'rows');
-        if (all(~isinside))
+        if (all(~isinside) && ~(isfield(cfg(i), 'compute') && strcmp(cfg(i).compute, 'optix')))
             if (size(cfg(i).elem, 2) == 4)
-                cfg(i).elem(:, 5) = 1;
+                cfg(i).elem(:, 5) = cfg(i).elemprop;
             end
             [cfg(i).node, cfg(i).elem] = mmcaddsrc(cfg(i).node, cfg(i).elem, sdom);
             cfg(i).elemprop = cfg(i).elem(:, 5);
-            if (isfield(cfg(i), 'edgeroi') || isfield(cfg(i), 'faceroi'))
-                [cfg(i).elem, evol, idx] = meshreorient(cfg(i).node, cfg(i).elem(:, 1:4));
-            else
-                [cfg(i).elem, evol] = meshreorient(cfg(i).node, cfg(i).elem(:, 1:4));
-            end
+            [cfg(i).elem, evol, idx] = meshreorient(cfg(i).node, cfg(i).elem(:, 1:4));
             if (isfield(cfg(i), 'edgeroi'))
                 cfg(i).edgeroi(idx, :) = cfg(i).edgeroi(idx, [1 3 2 5 4 6]);
             end

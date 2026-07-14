@@ -59,6 +59,14 @@ typedef cl_bitfield         cl_mem_flags_NV;
 
 #define OCL_ASSERT(x)  ocl_assess((x),__FILE__,__LINE__)
 
+#ifdef _MSC_VER
+#define PRE_ALIGN(x) __declspec(align(x))
+#define POST_ALIGN(x)
+#else
+#define PRE_ALIGN(x)
+#define POST_ALIGN(x) __attribute__ ((aligned(x)))
+#endif
+
 #define RAND_SEED_WORD_LEN      4        //48 bit packed with 64bit length
 
 typedef struct PRE_ALIGN(32) GPU_mcconfig {
@@ -101,6 +109,13 @@ typedef struct PRE_ALIGN(32) GPU_mcconfig {
     cl_int    issaveseed;
     cl_uint   seed;
     cl_uint   maxjumpdebug;         /**< max number of positions to be saved to save photon trajectory when -D M is used */
+    cl_float  omega;                /**< RF modulation angular frequency (rad/s); 0 for CW */
+    cl_float  oneoverc0;            /**< 1/C0 = 3.335640951981520e-12 s/mm */
+    cl_int    srcid;                /**< < 0 for multi-source (adjoint) mode; >= 0 for single source */
+    cl_int    extrasrclen;          /**< number of extra sources packed into gproperty after media */
+    cl_int    srcpropoffset;        /**< gproperty index where extra sources start (= prop+1+isextdet) */
+    cl_uint   isnodalmua;           /**< 1: read mua per-element from gnodemua centroid (DOT recon); CUDA only */
+    cl_uint   isnodalmusp;          /**< 1: read musp per-element from gnodemusp centroid (RF DOT recon); CUDA only */
 } MCXParam POST_ALIGN(32);
 
 typedef struct POST_ALIGN(32) GPU_reporter {

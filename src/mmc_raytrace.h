@@ -51,8 +51,13 @@
 *******************************************************************************/
 
 typedef struct MMC_ray {
+#if defined(MMC_USE_SSE) || defined(USE_OPENCL)
+    float4 p0;                    /**< current photon position */
+    float4 vec;                   /**< current photon direction vector */
+#else
     float3 p0;                    /**< current photon position */
     float3 vec;                   /**< current photon direction vector */
+#endif
     FLOAT3 pout;                  /**< the intersection position of the ray to the enclosing tet */
     float4 bary0;                 /**< the Barycentric coordinate of the intersection with the tet */
     int eid;                      /**< the index of the enclosing tet (starting from 1) */
