@@ -372,6 +372,20 @@ enum TBoundary {bcNoReflect, bcReflect, bcAbsorbExterior, bcMirror /*, bcCylic*/
 
 __constant__ int faceorder[] = {1, 3, 2, 0, -1};
 __constant__ int ifaceorder[] = {3, 0, 2, 1};
+
+/*epsilon nudge applied along a face normal when crossing into a neighboring
+  tetrahedron, to avoid near-zero-length re-intersections at (near-)degenerate,
+  grazing-incidence face pairs; empirically the minimum that reliably clears
+  such cases is ~5e-4, so a small safety margin is used here*/
+#define FACE_CROSS_EPS     1e-3f
+/*hard cap on face crossings within a single scattering segment; if a photon
+  still fails to escape a degenerate region despite the epsilon nudge above,
+  drop it as an edge-miss instead of hanging the kernel*/
+#define MAX_FACE_CROSSING  10000
+
+__device__ inline float getfacenormcomp(float4 v, int idx) {
+    return (idx == 0) ? v.x : (idx == 1) ? v.y : (idx == 2) ? v.z : v.w;
+}
 //__constant int fc[4][3]={{0,4,2},{3,5,4},{2,5,1},{1,3,0}};
 //__constant int nc[4][3]={{3,0,1},{3,1,2},{2,0,3},{1,0,2}};
 #if defined(MCX_SRC_PLANAR) || defined(MCX_SRC_PATTERN) || defined(MCX_SRC_PATTERN3D) || defined(MCX_SRC_FOURIER) || defined(MCX_SRC_FOURIERX) || defined(MCX_SRC_FOURIERX2D)
@@ -1579,7 +1593,18 @@ __device__ void onephoton(unsigned int id, __local float* ppath, __constant MCXP
 #endif
 
         /*move a photon until the end of the current scattering path*/
+        int facecrosscount = 0;
+
         while (r.faceid >= 0 && !r.isend) {
+            if (++facecrosscount > MAX_FACE_CROSSING) {
+                /*photon failed to escape a (near-)degenerate mesh region even
+                  with the face-normal nudge below; drop it as an edge-miss
+                  rather than hang the kernel*/
+                r.eid = ID_UNDEFINED;
+                r.pout.x = MMC_UNDEFINED;
+                break;
+            }
+
             r.p0 = r.pout;
 
             oldeid = r.eid;
@@ -1624,6 +1649,20 @@ __device__ void onephoton(unsigned int id, __local float* ppath, __constant MCXP
             //          if(r.eid==0 && gmed[type[oldeid-1]].n == GPU_PARAM(gcfg,nout) ) break;
             if (r.pout.x != MMC_UNDEFINED) { // && (GPU_PARAM(gcfg,debuglevel)&dlMove))
                 GPUDEBUG(("P %f %f %f %d %u %e\n", r.pout.x, r.pout.y, r.pout.z, r.eid, id, r.slen));
+            }
+
+            /*nudge the crossing point along the outward face normal of the
+              face just crossed; prevents near-zero-length re-intersections
+              at (near-)degenerate/grazing-incidence face pairs from stalling
+              the ray tracer (see branchless_badouel_raytet below)*/
+            if (r.faceid >= 0 && r.faceid <= 3) {
+                int nbase = (oldeid - 1) << 2;
+                int faceidx = ifaceorder[r.faceid];
+                float3 fnorm;
+                fnorm.x = getfacenormcomp(normal[nbase + 0], faceidx);
+                fnorm.y = getfacenormcomp(normal[nbase + 1], faceidx);
+                fnorm.z = getfacenormcomp(normal[nbase + 2], faceidx);
+                r.p0 = r.p0 + fnorm * FACE_CROSS_EPS;
             }
 
             r.slen = branchless_badouel_raytet(&r, gcfg, ppath, elem, weight, type[r.eid - 1], facenb, normal, gmed, replayweight, replaytime);
