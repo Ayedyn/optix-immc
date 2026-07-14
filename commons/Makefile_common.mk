@@ -18,6 +18,9 @@ MMCDIR  ?= $(ROOTDIR)
 
 MMCSRC :=$(MMCDIR)/src
 
+CUDAHOME ?= /usr/local/cuda
+OPTIXHOME ?= /usr/local/optix
+
 CXX        := g++
 AR         := $(CC)
 CUDACC     :=nvcc
@@ -27,6 +30,7 @@ BINDIR     := $(BIN)
 OBJDIR 	   := $(BUILT)
 CCFLAGS    += -c -Wall -g -DMCX_EMBED_CL -fno-strict-aliasing#-pedantic -std=c99 -mfpmath=sse -ffast-math -mtune=core2
 CXXFLAGS   += -std=c++11
+PTXFLAGS   += -O3 -ptx --expt-relaxed-constexpr -use_fast_math
 INCLUDEDIR := $(MMCDIR)/src -I$(MMCDIR)/src/zmat/easylzma -I$(MMCDIR)/src/ubj
 AROUTPUT   += -o
 MAKE       ?= make
@@ -47,7 +51,7 @@ SSEFLAGS   :=-DMMC_USE_SSE -DHAVE_SSE2 -msse -msse2 -msse3 -mssse3 -msse4.1
 ECHO	   := echo
 MKDIR      := mkdir
 
-ifneq (,$(filter $(MAKECMDGOALS),mex oct mexomp octomp cudamex cudaoct))
+ifneq (,$(filter $(MAKECMDGOALS),mex oct mexomp octomp cudamex cudaoct optixmex optixoct))
     ZMATLIB=
 else
     FILES+=mmc cjson/cJSON ubj/ubjw mmc_neurojson
@@ -60,6 +64,7 @@ MEXLINKLIBS=-L"\$$MATLABROOT/extern/lib/\$$ARCH" -L"\$$MATLABROOT/bin/\$$ARCH" -
 ARCH = $(shell uname -m)
 ifeq ($(findstring x86_64,$(ARCH)), x86_64)
      CCFLAGS+=-m64
+     PTXFLAGS+=-m64
 endif
 
 ISCLANG = $(shell $(CC) --version | grep clang)
@@ -177,7 +182,7 @@ ifeq ($(CC),clang)
         OPENMPLIB:= -lomp
 endif
 
-ifneq (,$(filter $(MAKECMDGOALS),mex cudamex))
+ifneq (,$(filter $(MAKECMDGOALS),mex cudamex optixmex))
         CCFLAGS+=-DMATLAB_MEX_FILE
 endif
 
@@ -185,12 +190,16 @@ ARFLAGS    :=
 
 OBJSUFFIX  := .o
 BINSUFFIX  :=
-CLHEADER=.clh
+CLHEADER   :=.clh
+PTXSUFFIX  :=.ptx
 
 OBJS       := $(addprefix $(OBJDIR)/, $(FILES))
 OBJS       := $(subst $(OBJDIR)/$(MMCSRC)/,$(MMCSRC)/,$(OBJS))
 OBJS       := $(addsuffix $(OBJSUFFIX), $(OBJS))
-CLSOURCE  := $(addsuffix $(CLHEADER), $(CLPROGRAM))
+CLSOURCE   := $(addsuffix $(CLHEADER), $(CLPROGRAM))
+
+PTXFILE    := $(addprefix $(OBJDIR)/, $(OPTIXPROGRAM))
+PTXFILE    := $(addsuffix $(PTXSUFFIX), $(PTXFILE))
 
 release:   CCFLAGS+= -O3
 sse ssemath mex oct: CCFLAGS+=$(SSEFLAGS)
@@ -248,9 +257,12 @@ endif
 cuda: ssemath
 cudamex: mex
 cudaoct: oct
+optix: cuda
+optixmex: cudamex
+optixoct: cudaoct
 trinity: cuda
 
-all release sse ssemath prof omp mex oct mexomp octomp web debug cuda: $(SUBDIRS) $(BINDIR)/$(BINARY)
+all release sse ssemath prof omp mex oct mexomp octomp web debug cuda optix optixmex optixoct: $(SUBDIRS) $(BINDIR)/$(BINARY)
 
 $(SUBDIRS):
 	$(MAKE) -C $@ --no-print-directory
@@ -265,6 +277,15 @@ makedocdir:
 
 .SUFFIXES : $(OBJSUFFIX) .cpp
 
+##  Compile .cu files to .ptx ##
+$(OBJDIR)/%$(PTXSUFFIX): %.cu
+	@$(ECHO) Building $@
+	$(CUDACC) $(PTXFLAGS) $(USERCCFLAGS) -o $@  $<
+
+##  Ensure ptx-embedded .cpp depends on .ptx file ##
+ifneq ($(PTXSOURCE),)
+$(OBJDIR)/$(PTXSOURCE)$(OBJSUFFIX): $(PTXFILE)
+endif
 
 ##  Compile .cu files ##
 $(OBJDIR)/%$(OBJSUFFIX): %.cu
@@ -304,7 +325,7 @@ doc: makedocdir
 ## Clean
 clean:
 	-$(MAKE) -C zmat clean
-	rm -rf $(OBJS) $(OBJDIR) $(BINDIR) $(DOCDIR)
+	rm -rf $(OBJS) $(OBJDIR) $(BINDIR) $(DOCDIR) $(PTXFILE)
 ifdef SUBDIRS
 	for i in $(SUBDIRS); do $(MAKE) --no-print-directory -C $$i clean; done
 endif

@@ -38,7 +38,7 @@
 #ifndef _MMC_VECTOR_H
 #define _MMC_VECTOR_H
 
-#ifndef __VECTOR_TYPES_H__
+#if !defined(__VECTOR_TYPES_H__) && !defined(__DRIVER_TYPES_H__)
 
 
 #ifdef _MSC_VER
@@ -133,6 +133,13 @@ typedef struct MMC_uint2 {
 
 typedef unsigned int uint;
 typedef unsigned char uchar;
+
+#else
+
+typedef unsigned char uchar;
+typedef struct FLOAT3 {
+    float x, y, z;
+} FLOAT3;
 
 #endif
 

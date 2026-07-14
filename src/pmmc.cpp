@@ -127,9 +127,10 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
     GET_SCALAR_FIELD(user_cfg, mcx_config, tstep, py::float_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, tend, py::float_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, isreflect, py::int_);
-    GET_SCALAR_FIELD(user_cfg, mcx_config, isspecular, py::bool_);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, isspecular, py::int_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, ismomentum, py::bool_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, issaveexit, py::bool_);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, isextdet, py::bool_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, issave2pt, py::bool_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, issavedet, py::int_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, issaveseed, py::bool_);
@@ -150,13 +151,94 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
     GET_SCALAR_FIELD(user_cfg, mcx_config, maxdetphoton, py::int_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, maxjumpdebug, py::int_);
     GET_SCALAR_FIELD(user_cfg, mcx_config, e0, py::int_);
-    GET_VEC3_FIELD(user_cfg, mcx_config, srcpos, float);
-    GET_VEC34_FIELD(user_cfg, mcx_config, srcdir, float);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, srcid, py::int_);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, adjointmode, py::int_);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, isnodalmua, py::int_);
+    GET_SCALAR_FIELD(user_cfg, mcx_config, isnodalmusp, py::int_);
     GET_VEC3_FIELD(user_cfg, mcx_config, steps, float);
     GET_VEC4_FIELD(user_cfg, mcx_config, srcparam1, float);
     GET_VEC4_FIELD(user_cfg, mcx_config, srcparam2, float);
     GET_VEC4_FIELD(user_cfg, mcx_config, detparam1, float);
     GET_VEC4_FIELD(user_cfg, mcx_config, detparam2, float);
+
+    /* srcpos / srcdir can be either a single 3- or 4-vector (single source)
+     * or an (Nsrc, 3) / (Nsrc, 4) matrix (multi-source). The matrix form
+     * mirrors mmclab.cpp:783-821: row 0 fills cfg.srcpos/srcdir (the
+     * "main" slot the kernel falls back to in single-source mode); all
+     * rows are then copied into cfg.srcdata[0..Nsrc-1] and cfg.extrasrclen
+     * is set to Nsrc, so the multi-source kernel dispatch picks them up.
+     *
+     * srcdir's optional 4th column (focal length / RF NaN/Inf markers) is
+     * read whenever the row has 4 entries; the floats parse cleanly even
+     * for NaN/Inf if the caller passes math.nan / math.inf in the numpy
+     * array (no string-literal handling like mmclab.cpp because pybind11
+     * arrays are typed). */
+    {
+        auto parse_multisrc_matrix = [&](const char* name, float4 & dst_single,
+        float4 ExtraSrc::* dst_field, bool is_srcdir) {
+            if (!user_cfg.contains(name)) {
+                return;
+            }
+
+            auto arr = py::array_t < float, py::array::f_style | py::array::forcecast >::ensure(user_cfg[name]);
+
+            if (!arr) {
+                throw py::value_error(std::string("Invalid ") + name + " field value");
+            }
+
+            auto info = arr.request();
+
+            int nrows = 1, ncols = 0;
+
+            if (info.ndim == 1) {
+                ncols = (int)info.shape[0];
+            } else if (info.ndim == 2) {
+                nrows = (int)info.shape[0];
+                ncols = (int)info.shape[1];
+            } else {
+                throw py::value_error(std::string(name) + " must be a 1D or 2D array");
+            }
+
+            if (ncols < 3 || ncols > 4) {
+                throw py::value_error(std::string(name) + " must have 3 or 4 columns");
+            }
+
+            float* val = (float*)info.ptr;
+
+            /* numpy passes f_style: linear index = col * nrows + row */
+            for (int c = 0; c < ncols; c++) {
+                ((float*)(&dst_single))[c] = val[c * nrows + 0];
+            }
+
+            std::cout << name << ": [" << dst_single.x << ", " << dst_single.y << ", "
+                      << dst_single.z << ", " << dst_single.w << "]" << std::endl;
+
+            if (nrows == 1 && mcx_config.extrasrclen == 0) {
+                return;
+            }
+
+            /* multi-source: populate srcdata[].srcpos or srcdata[].srcdir */
+            if (mcx_config.extrasrclen != 0 && mcx_config.extrasrclen != nrows) {
+                throw py::value_error("Length of sub-elements of srcpos/srcdir/srcparam1/srcparam2 must match");
+            }
+
+            mcx_config.extrasrclen = nrows;
+
+            if (mcx_config.srcdata == NULL) {
+                mcx_config.srcdata = (ExtraSrc*)calloc(sizeof(ExtraSrc), mcx_config.extrasrclen);
+            }
+
+            for (int c = 0; c < ncols; c++)
+                for (int r = 0; r < nrows; r++) {
+                    ((float*)(&(mcx_config.srcdata[r].*dst_field)))[c] = val[c * nrows + r];
+                }
+
+            std::cout << name << " multi-source rows=" << nrows << std::endl;
+        };
+
+        parse_multisrc_matrix("srcpos", mcx_config.srcpos, &ExtraSrc::srcpos, false);
+        parse_multisrc_matrix("srcdir", mcx_config.srcdir, &ExtraSrc::srcdir, true);
+    }
 
     if (user_cfg.contains("node")) {
         auto f_style_volume = py::array_t < float, py::array::f_style | py::array::forcecast >::ensure(user_cfg["node"]);
@@ -415,6 +497,37 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
     }
 
 
+
+    if (user_cfg.contains("compileropt")) {
+        std::string compileropt = py::str(user_cfg["compileropt"]);
+
+        if (compileropt.empty()) {
+            throw py::value_error("the 'compileropt' field must be a non-empty string");
+        }
+
+        if (compileropt.size() > MAX_PATH_LENGTH) {
+            throw py::value_error("the 'compileropt' field is too long");
+        }
+
+        strncpy(mcx_config.compileropt, compileropt.c_str(), MAX_PATH_LENGTH);
+    }
+
+
+    if (user_cfg.contains("kernelfile")) {
+        std::string kernelfile = py::str(user_cfg["kernelfile"]);
+
+        if (kernelfile.empty()) {
+            throw py::value_error("the 'kernelfile' field must be a non-empty string");
+        }
+
+        if (kernelfile.size() > MAX_SESSION_LENGTH) {
+            throw py::value_error("the 'kernelfile' field is too long");
+        }
+
+        strncpy(mcx_config.kernelfile, kernelfile.c_str(), MAX_SESSION_LENGTH);
+    }
+
+
     if (user_cfg.contains("session")) {
         std::string session = py::str(user_cfg["session"]);
 
@@ -467,7 +580,9 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
 
     if (user_cfg.contains("outputtype")) {
         std::string output_type_str = py::str(user_cfg["outputtype"]);
-        const char* outputtype[] = {"flux", "fluence", "energy", "jacobian", "nscat", "wl", "wp", ""};
+        const char* outputtype[] = {"flux", "fluence", "energy", "jacobian", "wl", "wp",
+                                    "rf", "rfmus", "adjoint", "adjoint_dcoeff", "adjoint_mus", "adjoint_musp", "adjoint_mua_d", "adjoint_mua_musp", ""
+                                   };
 
         if (output_type_str.empty()) {
             throw py::value_error("the 'outputtype' field must be a non-empty string");
@@ -475,13 +590,86 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
 
         mcx_config.outputtype = mcx_keylookup((char*)(output_type_str.c_str()), outputtype);
 
-        if (mcx_config.outputtype >= 5) { // map wl to jacobian, wp to nscat
-            mcx_config.outputtype -= 2;
-        }
-
         if (mcx_config.outputtype == -1) {
             throw py::value_error("the specified output type is not supported");
         }
+    }
+
+    if (user_cfg.contains("omega")) {
+        mcx_config.omega = py::float_(user_cfg["omega"]);
+        std::cout << "omega: " << mcx_config.omega << std::endl;
+    }
+
+    if (user_cfg.contains("detdir")) {
+        auto f_style_volume = py::array_t < float, py::array::f_style | py::array::forcecast >::ensure(user_cfg["detdir"]);
+
+        if (!f_style_volume) {
+            throw py::value_error("Invalid detdir field value");
+        }
+
+        auto buffer_info = f_style_volume.request();
+
+        if ((buffer_info.shape.size() > 1 && buffer_info.shape.at(0) > 0 && buffer_info.shape.at(1) != 4) || (buffer_info.shape.size() == 1 && buffer_info.shape.at(0) != 4)) {
+            throw py::value_error("the 'detdir' field must have 4 columns (dx,dy,dz,focal)");
+        }
+
+        int nd = (buffer_info.shape.size() == 1) ? 1 : buffer_info.shape.at(0);
+
+        if (mcx_config.detdir) {
+            free(mcx_config.detdir);
+        }
+
+        mcx_config.detdir = (float4*) malloc(nd * sizeof(float4));
+        auto val = static_cast<float*>(buffer_info.ptr);
+
+        for (int j = 0; j < 4; j++)
+            for (int i = 0; i < nd; i++) {
+                ((float*) (&mcx_config.detdir[i]))[j] = val[j * nd + i];
+            }
+
+        std::cout << "detdir: [" << nd << ",4]" << std::endl;
+    }
+
+    /* per-node optical properties: cfg.nodemua / cfg.nodemusp are length-nn float arrays.
+     * Either array's presence auto-sets the corresponding isnodal* flag. */
+    if (user_cfg.contains("nodemua")) {
+        auto arr = py::array_t < float, py::array::f_style | py::array::forcecast >::ensure(user_cfg["nodemua"]);
+
+        if (!arr) {
+            throw py::value_error("Invalid nodemua field value");
+        }
+
+        auto buffer_info = arr.request();
+        size_t nn = (size_t)buffer_info.size;
+
+        if (mcx_config.nodemua) {
+            free(mcx_config.nodemua);
+        }
+
+        mcx_config.nodemua = (float*) malloc(nn * sizeof(float));
+        memcpy(mcx_config.nodemua, buffer_info.ptr, nn * sizeof(float));
+        mcx_config.isnodalmua = 1;
+        std::cout << "nodemua: [" << nn << "]" << std::endl;
+    }
+
+    if (user_cfg.contains("nodemusp")) {
+        auto arr = py::array_t < float, py::array::f_style | py::array::forcecast >::ensure(user_cfg["nodemusp"]);
+
+        if (!arr) {
+            throw py::value_error("Invalid nodemusp field value");
+        }
+
+        auto buffer_info = arr.request();
+        size_t nn = (size_t)buffer_info.size;
+
+        if (mcx_config.nodemusp) {
+            free(mcx_config.nodemusp);
+        }
+
+        mcx_config.nodemusp = (float*) malloc(nn * sizeof(float));
+        memcpy(mcx_config.nodemusp, buffer_info.ptr, nn * sizeof(float));
+        mcx_config.isnodalmusp = 1;
+        std::cout << "nodemusp: [" << nn << "]" << std::endl;
     }
 
 
@@ -592,7 +780,7 @@ void parse_config(const py::dict& user_cfg, mcconfig& mcx_config, tetmesh& mesh)
             auto buffer_info = f_style_array.request();
             seed_byte = buffer_info.shape.at(0);
 
-            if (buffer_info.shape.at(0) != sizeof(float) * RAND_BUF_LEN) {
+            if (buffer_info.shape.at(0) != sizeof(RandType) * RAND_BUF_LEN) {
                 throw py::value_error("the row number of cfg.seed does not match RNG seed byte-length");
             }
 
@@ -751,6 +939,86 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
 
         /** Validate all input fields, and warn incompatible inputs */
         mmc_validate_config(&mcx_config, det_ps, dim_det_ps, seed_byte);
+
+        /** Build srcdata from detectors for adjoint / srcid=-2 mode BEFORE
+         *  mesh_validate runs.  mesh_validate allocates mesh.weight sized by
+         *  the final nsrcslots = max(srcnum, extrasrclen); doing the
+         *  detector-append later would leave mesh.weight under-sized for the
+         *  Ns+Nd slots the kernel ends up writing to, producing a heap
+         *  overflow at simulation end.  This matches mmclab.cpp's order:
+         *  build-srcdata first, validate second.
+         *
+         *  Convention (matches mmclab.cpp and mmc_validate_config):
+         *    slots 0..Ns-1        : forward sources (copy of cfg.srcpos)
+         *    slots Ns..Ns+Nd-1    : detector-as-adjoint sources
+         *
+         *  If the multi-source srcpos parser already populated cfg.srcdata
+         *  with M forward slots (cfg.extrasrclen == M), keep them and only
+         *  append Nd detectors.  Otherwise replicate cfg.srcpos/srcdir Ns
+         *  times (single-source / photon-sharing convention).
+         */
+        if ((MCX_IS_ADJOINT_TYPE(mcx_config.outputtype) || mcx_config.srcid == -2)
+                && mcx_config.detnum > 0 && mcx_config.detdir != nullptr) {
+            int Nd_pre = mcx_config.detnum;
+            int Ns_pre;
+            int already_populated_pre = (mcx_config.srcdata != nullptr && mcx_config.extrasrclen > 0);
+
+            if (already_populated_pre) {
+                Ns_pre = mcx_config.extrasrclen;
+                mcx_config.srcdata = (ExtraSrc*)realloc(mcx_config.srcdata, (Ns_pre + Nd_pre) * sizeof(ExtraSrc));
+                memset(mcx_config.srcdata + Ns_pre, 0, Nd_pre * sizeof(ExtraSrc));
+
+                /* Uniform per-slot launch weight (MCX parity, mcx_utils.c:1822, :1985-1986):
+                 * every slot launches with srcpos.w = 1 so the total simulated energy
+                 * equals N_photon. Matches mmclab.cpp adjoint setup. */
+                for (int is = 0; is < Ns_pre; is++) {
+                    if (mcx_config.srcdata[is].srcpos.w == 0.f) {
+                        mcx_config.srcdata[is].srcpos.w = 1.f;
+                    }
+                }
+            } else {
+                if (mcx_config.srcdata) {
+                    free(mcx_config.srcdata);
+                }
+
+                Ns_pre = (mcx_config.srcnum > 0) ? mcx_config.srcnum : 1;
+                mcx_config.srcdata = (ExtraSrc*)calloc(Ns_pre + Nd_pre, sizeof(ExtraSrc));
+
+                /* Slots 0..Ns-1: forward sources (replicate the single main source).
+                 * Uniform unit weight per slot (MCX parity); preserve cfg.srcdir.w
+                 * (focal length / lens parameter). Detector slots below honor
+                 * cfg.detdir.w. */
+                for (int is = 0; is < Ns_pre; is++) {
+                    mcx_config.srcdata[is].srcpos    = {mcx_config.srcpos.x, mcx_config.srcpos.y,
+                                                        mcx_config.srcpos.z, 1.f
+                                                       };
+                    mcx_config.srcdata[is].srcdir    = {mcx_config.srcdir.x, mcx_config.srcdir.y,
+                                                        mcx_config.srcdir.z, mcx_config.srcdir.w
+                                                       };
+                    mcx_config.srcdata[is].srcparam1 = mcx_config.srcparam1;
+                    mcx_config.srcdata[is].srcparam2 = mcx_config.srcparam2;
+                }
+            }
+
+            mcx_config.extrasrclen = Ns_pre + Nd_pre;
+
+            /* Slots Ns..Ns+Nd-1: detector-as-reversed-source, unit weight per slot. */
+            for (int id = 0; id < Nd_pre; id++) {
+                mcx_config.srcdata[Ns_pre + id].srcpos  = {mcx_config.detpos[id].x, mcx_config.detpos[id].y,
+                                                           mcx_config.detpos[id].z, 1.f
+                                                          };
+                mcx_config.srcdata[Ns_pre + id].srcdir  = {mcx_config.detdir[id].x, mcx_config.detdir[id].y,
+                                                           mcx_config.detdir[id].z, mcx_config.detdir[id].w
+                                                          };
+                mcx_config.srcdata[Ns_pre + id].srcparam1 = {mcx_config.detpos[id].w, 0.f, 0.f, 0.f};
+                mcx_config.srcdata[Ns_pre + id].srcparam2 = {0.f, 0.f, 0.f, 0.f};
+            }
+
+            if (MCX_IS_ADJOINT_TYPE(mcx_config.outputtype)) {
+                mcx_config.srcid = -1;
+            }
+        }
+
         mesh_validate(&mesh, &mcx_config);
 
         hostdetreclen = (2 + ((mcx_config.ismomentum) > 0)) * mesh.prop + (mcx_config.issaveexit > 0) * 6 + 2;
@@ -765,11 +1033,11 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
 #endif
 
         if (mcx_config.issavedet >= 1) {
-            mcx_config.exportdetected = (float*) malloc(hostdetreclen * mcx_config.maxdetphoton * sizeof(float));
+            mcx_config.exportdetected = NULL;
         }
 
-        if (mcx_config.issaveseed == 1) {
-            mcx_config.photonseed = malloc(mcx_config.maxdetphoton * sizeof(float) * RAND_BUF_LEN);
+        if (mcx_config.issaveseed == 1 && mcx_config.seed != SEED_FROM_FILE) {
+            mcx_config.photonseed = malloc(mcx_config.maxdetphoton * sizeof(RandType) * RAND_BUF_LEN);
         }
 
         if (mcx_config.debuglevel & MCX_DEBUG_MOVE) {
@@ -778,6 +1046,9 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
         }
 
         mesh_srcdetelem(&mesh, &mcx_config);
+
+        /* (detector-as-adjoint-source append now runs above, before
+         * mesh_validate, so mesh.weight is sized for the correct nsrcslots.) */
 
         if (mcx_config.isgpuinfo == 0) {
             mmc_prep(&mcx_config, &mesh, &tracer);
@@ -838,14 +1109,14 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
         }
 
         if (mcx_config.issaveseed == 1) {
-            field_dim[0] = (mcx_config.issaveseed > 0) * RAND_BUF_LEN * sizeof(float);
+            field_dim[0] = (mcx_config.issaveseed > 0) * sizeof(RandType) * RAND_BUF_LEN;
             field_dim[1] = mcx_config.detectedcount; // his.savedphoton is for one repetition, should correct
             field_dim[2] = 0;
             field_dim[3] = 0;
             auto detected_seeds = py::array_t<uint8_t, py::array::f_style>({field_dim[0], field_dim[1]});
-            memcpy(detected_seeds.mutable_data(), mcx_config.photonseed, field_dim[0] * field_dim[1]);
-            free(mcx_config.photonseed);
-            mcx_config.photonseed = nullptr;
+            memcpy(detected_seeds.mutable_data(), mcx_config.exportseed, field_dim[0] * field_dim[1]);
+            free(mcx_config.exportseed);
+            mcx_config.exportseed = nullptr;
             output["seeds"] = detected_seeds;
         }
 
@@ -881,8 +1152,17 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
         }
 
         if (mcx_config.issave2pt) {
+            int isrfforward = (mcx_config.omega > 0.f && mcx_config.seed != SEED_FROM_FILE);
+            int isadjoint = MCX_IS_ADJOINT_TYPE(mcx_config.outputtype);
+
+            /* When extrasrclen exceeds srcnum, the kernel runs nsrcslots = extrasrclen
+             * slots in the weight buffer regardless of whether outputtype is adjoint
+             * (e.g. cfg.srcid = -2 forward-only multi-source mode). */
+            int nsrcslots = (mcx_config.extrasrclen > mcx_config.srcnum) ? mcx_config.extrasrclen : mcx_config.srcnum;
+            int ismultislot = (nsrcslots > mcx_config.srcnum);
+
             size_t datalen = (mcx_config.method == rtBLBadouelGrid) ? mcx_config.crop0.z : ( (mcx_config.basisorder) ? mesh.nn : mesh.ne);
-            field_dim[0] = mcx_config.srcnum;
+            field_dim[0] = nsrcslots;
             field_dim[1] = datalen;
             field_dim[2] = mcx_config.maxgate;
             field_dim[3] = 0;
@@ -890,29 +1170,58 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
 
             std::vector<size_t> array_dims;
 
+            /* Always output forward fluence in output["flux"].
+             * In adjoint mode, flux["flux"] has nsrcslots = srcnum+detnum slices (sources then
+             * detectors-as-sources), and Jacobians go to output["jmua"], output["jd"], etc. */
             if (mcx_config.method == rtBLBadouelGrid) {
-                field_dim[0] = mcx_config.srcnum;
-                field_dim[1] = mcx_config.dim.x;
-                field_dim[2] = mcx_config.dim.y;
-                field_dim[3] = mcx_config.dim.z;
-                field_dim[4] = mcx_config.maxgate;
-
-                if (mcx_config.srcnum > 1) {
-                    array_dims = {field_dim[0], field_dim[1], field_dim[2], field_dim[3], field_dim[4]};
+                /* multi-slot layouts use either:
+                 *   detector-adjoint slots (nsrcslots > srcnum; adjoint or srcid==-2 forward):
+                 *       voxel-fastest, gate-middle, slot-slowest -> [..., maxgate, nsrcslots]
+                 *   pattern source (nsrcslots == srcnum > 1):
+                 *       pidx-fastest                             -> [srcnum, ..., maxgate] */
+                if (ismultislot) {
+                    array_dims = {(size_t)mcx_config.dim.x, (size_t)mcx_config.dim.y,
+                                  (size_t)mcx_config.dim.z, (size_t)mcx_config.maxgate, (size_t)nsrcslots
+                                 };
+                } else if (mcx_config.srcnum > 1) {
+                    array_dims = {(size_t)mcx_config.srcnum, (size_t)mcx_config.dim.x,
+                                  (size_t)mcx_config.dim.y, (size_t)mcx_config.dim.z, (size_t)mcx_config.maxgate
+                                 };
                 } else {
-                    array_dims = {field_dim[1], field_dim[2], field_dim[3], field_dim[4]};
+                    array_dims = {(size_t)mcx_config.dim.x, (size_t)mcx_config.dim.y,
+                                  (size_t)mcx_config.dim.z, (size_t)mcx_config.maxgate
+                                 };
                 }
             } else {
-                if (mcx_config.srcnum > 1) {
-                    array_dims = {field_dim[0], field_dim[1], field_dim[2]};
+                /* mesh-mode layout. Kernel write order:
+                 *   detector-adjoint slots (nsrcslots > srcnum, srcnum==1):
+                 *       field[node + gate*nn + slot*nn*maxgate]  -> shape [datalen, maxgate, nsrcslots]
+                 *   pattern source (nsrcslots == srcnum > 1):
+                 *       field[(gate*ne + eid)*srcnum + pidx]     -> shape [nsrcslots, datalen, maxgate]
+                 *   single source:
+                 *       field[node + gate*nn]                    -> shape [datalen, maxgate] */
+                if (nsrcslots > 1) {
+                    if (ismultislot) {
+                        array_dims = {datalen, (size_t)mcx_config.maxgate, (size_t)nsrcslots};
+                    } else {
+                        array_dims = {(size_t)nsrcslots, datalen, (size_t)mcx_config.maxgate};
+                    }
                 } else {
-                    array_dims = {field_dim[1], field_dim[2]};
+                    array_dims = {datalen, (size_t)mcx_config.maxgate};
                 }
             }
 
             auto data = py::array_t<double, py::array::f_style>(array_dims);
             memcpy(data.mutable_data(), mesh.weight, data.size() * sizeof(double));
             output["flux"] = data;
+
+            /* RF forward: also return imaginary part in a separate field */
+            if (isrfforward && mcx_config.exportadjoint) {
+                auto im_data = py::array_t<float, py::array::f_style>(array_dims);
+                auto* im_ptr = static_cast<float*>(im_data.mutable_data());
+                memcpy(im_ptr, mcx_config.exportadjoint, data.size() * sizeof(float));
+                output["fluximag"] = im_data;
+            }
 
             if (mcx_config.issaveref) {
                 field_dim[1] = mesh.nf;
@@ -923,6 +1232,90 @@ py::dict pmmc_interface(const py::dict& user_cfg) {
                 memcpy(dref, mesh.dref, dref_array.size() * sizeof(double));
 
                 output["dref"] = dref_array;
+            }
+
+            /* Output adjoint Jacobian in separate dict fields (output["jmua"], output["jd"], etc.).
+             * Grid mode: shape [Nx, Ny, Nz, maxgate, Ns*Nd].
+             * Mesh mode (basisorder=1): shape [nn, Ns*Nd] (CW, no maxgate dim). */
+            if (isadjoint && mcx_config.exportjacob) {
+                int Ns = (mcx_config.extrasrclen > mcx_config.detnum) ? (mcx_config.extrasrclen - mcx_config.detnum) : 1;
+                int Nd = (mcx_config.detnum > 0)                      ?  mcx_config.detnum                          : 1;
+                int nsrcpairs = Ns * Nd;
+                int isdual = MCX_IS_DUAL_ADJOINT_TYPE(mcx_config.outputtype);
+                size_t adjlen;
+                std::vector<size_t> jdims;
+
+                if (mcx_config.method == rtBLBadouelGrid) {
+                    adjlen = (size_t)mcx_config.dim.x * mcx_config.dim.y * mcx_config.dim.z *
+                             mcx_config.maxgate * nsrcpairs;
+                    jdims = {(size_t)mcx_config.dim.x, (size_t)mcx_config.dim.y,
+                             (size_t)mcx_config.dim.z, (size_t)mcx_config.maxgate,
+                             (size_t)nsrcpairs
+                            };
+                } else {
+                    /* mesh mode: nodal output, CW only */
+                    adjlen = (size_t)mesh.nn * nsrcpairs;
+                    jdims = {(size_t)mesh.nn, (size_t)nsrcpairs};
+                }
+
+                const char* jname1 = "jmua";
+                const char* jname2 = "jd";
+
+                switch (mcx_config.outputtype) {
+                    case otAdjoint:
+                        jname1 = "jmua";
+                        break;
+
+                    case otAdjointDcoeff:
+                        jname1 = "jd";
+                        break;
+
+                    case otAdjointMus:
+                        jname1 = "jmus";
+                        break;
+
+                    case otAdjointMusp:
+                        jname1 = "jmusp";
+                        break;
+
+                    case otAdjointMuaD:
+                        jname1 = "jmua";
+                        jname2 = "jd";
+                        break;
+
+                    case otAdjointMuaMusp:
+                        jname1 = "jmua";
+                        jname2 = "jmusp";
+                        break;
+
+                    default:
+                        break;
+                }
+
+                /* For RF: output real and imaginary parts in separate _re/_im arrays */
+                float* re1 = mcx_config.exportjacob;
+                float* re2 = isdual      ? mcx_config.exportjacob + adjlen                    : nullptr;
+                float* im1 = isrfforward ? mcx_config.exportjacob + (isdual ? 2 : 1) * adjlen : nullptr;
+                float* im2 = (isrfforward && isdual) ? mcx_config.exportjacob + 3 * adjlen    : nullptr;
+
+                auto add_jac = [&](const char* fname, float * re_data, float * im_data) {
+                    auto jre = py::array_t<float, py::array::f_style>(jdims);
+                    memcpy(jre.mutable_data(), re_data, adjlen * sizeof(float));
+                    output[fname] = jre;
+
+                    if (isrfforward && im_data) {
+                        std::string imname = std::string(fname) + "_im";
+                        auto jim = py::array_t<float, py::array::f_style>(jdims);
+                        memcpy(jim.mutable_data(), im_data, adjlen * sizeof(float));
+                        output[imname.c_str()] = jim;
+                    }
+                };
+
+                add_jac(jname1, re1, im1);
+
+                if (isdual) {
+                    add_jac(jname2, re2, im2);
+                }
             }
         }
     } catch (const char* err) {
