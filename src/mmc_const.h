@@ -64,6 +64,7 @@
 #define MCX_SRC_PATTERN3D  15  /**<  a 3D pattern source, starting from srcpos, srcparam1.{x,y,z} define the x/y/z dimensions */
 #define MCX_SRC_HYPERBOLOID_GAUSSIAN 16 /**<  hyperboloid Gaussian beam, srcparam1.{x,y,z}={beam_waist(mm), focal_dist(mm), rayleigh_range(mm)} */
 #define MCX_SRC_RING       17  /**<  a ring-shaped beam, srcparam1.{x,y,z,w}={outer_r, inner_r, phi_start(rad), phi_end(rad)} */
+#define MCX_SRC_ELEMBARY   18  /**<  weighted-element + barycentric-point volumetric source, see mmclab.m */
 
 #define SAVE_DETID(a)         ((a)    & 0x1)   /**<  mask to save detector ID*/
 #define SAVE_NSCAT(a)         ((a)>>1 & 0x1)   /**<  output partial scattering counts */

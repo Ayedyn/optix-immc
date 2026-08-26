@@ -101,7 +101,7 @@ enum TComputeBackend {cbSSE, cbOpenCL, cbCUDA, cbOptiX};
 enum TSrcType {stPencil, stIsotropic, stCone, stGaussian, stPlanar,
                stPattern, stFourier, stArcSin, stDisk, stFourierX,
                stFourier2D, stZGaussian, stLine, stSlit,
-               stPencilArray, stPattern3D, stHyperboloid, stRing
+               stPencilArray, stPattern3D, stHyperboloid, stRing, stElemBary
               };
 enum TOutputType {otFlux, otFluence, otEnergy, otJacobian, otWL, otWP,
                   otRF, otRFmus,

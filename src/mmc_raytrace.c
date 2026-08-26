@@ -2566,9 +2566,70 @@ void launchphoton(mcconfig* cfg, ray* r, tetmesh* mesh, RandType* ran, RandType*
         origin.y += (cfg->srcparam1.y) * 0.5f;
         origin.z += (cfg->srcparam1.z) * 0.5f;
         canfocus = (cfg->srctype == stSlit);
+    } else if (cfg->srctype == stElemBary) {
+        int ecount = (int)cfg->srcparam1.x;
+        float target = rand_uniform01(ran) * cfg->srcpattern[(ecount - 1) * 2];
+        int lo = 0, hi = ecount - 1;
+
+        while (lo < hi) {
+            int mid = (lo + hi) >> 1;
+
+            if (cfg->srcpattern[mid * 2] < target) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        int eid = (int)cfg->srcpattern[lo * 2 + 1];
+        int* ee = (int*)(mesh->elem + (eid - 1) * mesh->elemlen);
+        float s = rand_uniform01(ran), t = rand_uniform01(ran), u = rand_uniform01(ran);
+
+        if (s + t > 1.f) {
+            s = 1.f - s;
+            t = 1.f - t;
+        }
+
+        if (t + u > 1.f) {
+            float tmp = u;
+            u = 1.f - s - t;
+            t = 1.f - tmp;
+        } else if (s + t + u > 1.f) {
+            float tmp = u;
+            u = s + t + u - 1.f;
+            s = 1.f - t - tmp;
+        }
+
+        FLOAT3* n0 = mesh->node + (ee[0] - 1);
+        FLOAT3* n1 = mesh->node + (ee[1] - 1);
+        FLOAT3* n2 = mesh->node + (ee[2] - 1);
+        FLOAT3* n3 = mesh->node + (ee[3] - 1);
+        float a = 1.f - s - t - u;
+        r->p0.x = a * n0->x + s * n1->x + t * n2->x + u * n3->x;
+        r->p0.y = a * n0->y + s * n1->y + t * n2->y + u * n3->y;
+        r->p0.z = a * n0->z + s * n1->z + t * n2->z + u * n3->z;
+        r->eid = eid;
+        r->weight = 1.f;
     }
 
-    if (canfocus && r->focus != 0.f) { // if beam focus is set, determine the incident angle
+    if (canfocus && isnan(r->focus)) { // isotropic emission if focal length is nan
+        float ang, stheta, ctheta, sphi, cphi;
+        ang = TWO_PI * rand_uniform01(ran);
+        sphi = sinf(ang);
+        cphi = cosf(ang);
+        ang = acosf(2.f * rand_uniform01(ran) - 1.f);
+        stheta = sinf(ang);
+        ctheta = cosf(ang);
+        rotatevector(&(r->vec), stheta, ctheta, sphi, cphi);
+    } else if (canfocus && r->focus < 0.f && isinf(r->focus)) { // lambertian if focal length is -inf
+        float ang, stheta, ctheta, sphi, cphi;
+        ang = TWO_PI * rand_uniform01(ran);
+        sphi = sinf(ang);
+        cphi = cosf(ang);
+        stheta = sqrtf(rand_uniform01(ran));
+        ctheta = sqrtf(1.f - stheta * stheta);
+        rotatevector(&(r->vec), stheta, ctheta, sphi, cphi);
+    } else if (canfocus && r->focus != 0.f) { // if beam focus is set, determine the incident angle
         float Rn2;
         origin.x += r->focus * r->vec.x;
         origin.y += r->focus * r->vec.y;

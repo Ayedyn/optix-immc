@@ -3527,8 +3527,8 @@ void mcx_validatecfg(mcconfig* cfg) {
     cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
     cfg->tend = cfg->tstart + cfg->tstep * cfg->maxgate;
 
-    if (cfg->srctype == stPattern && cfg->srcpattern == NULL) {
-        MMC_ERROR(-2, "the 'srcpattern' field can not be empty when your 'srctype' is 'pattern'");
+    if ((cfg->srctype == stPattern || cfg->srctype == stElemBary) && cfg->srcpattern == NULL) {
+        MMC_ERROR(-2, "the 'srcpattern' field can not be empty when your 'srctype' is 'pattern' or 'elembary'");
     }
 
     if (cfg->srcnum > 1 && cfg->seed == SEED_FROM_FILE) {
@@ -3670,8 +3670,8 @@ void mmc_validate_config(mcconfig* cfg, float* detps, int dimdetps[2], int seedb
     cfg->maxgate = (int)((cfg->tend - cfg->tstart) / cfg->tstep + 0.5);
     cfg->tend = cfg->tstart + cfg->tstep * cfg->maxgate;
 
-    if (cfg->srctype == stPattern && cfg->srcpattern == NULL) {
-        MMC_ERROR(999, "the 'srcpattern' field can not be empty when your 'srctype' is 'pattern'");
+    if ((cfg->srctype == stPattern || cfg->srctype == stElemBary) && cfg->srcpattern == NULL) {
+        MMC_ERROR(999, "the 'srcpattern' field can not be empty when your 'srctype' is 'pattern' or 'elembary'");
     }
 
     if (cfg->srcnum > 1 && cfg->seed == SEED_FROM_FILE) {

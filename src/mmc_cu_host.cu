@@ -580,6 +580,11 @@ void mmc_run_simulation(mcconfig* cfg, tetmesh* mesh, raytracer* tracer, GPUInfo
                                sizeof(float) * (int)(cfg->srcparam1.x * cfg->srcparam1.y*
                                        cfg->srcparam1.z * cfg->srcnum),
                                cudaMemcpyHostToDevice));
+    } else if (cfg->srctype == MCX_SRC_ELEMBARY) {
+        CUDA_ASSERT(cudaMalloc((void**)&gsrcpattern, sizeof(float) * (int)(cfg->srcparam1.x) * 2));
+        CUDA_ASSERT(cudaMemcpy(gsrcpattern, cfg->srcpattern,
+                               sizeof(float) * (int)(cfg->srcparam1.x) * 2,
+                               cudaMemcpyHostToDevice));
     } else {
         gsrcpattern = NULL;
     }

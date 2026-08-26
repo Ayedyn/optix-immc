@@ -70,6 +70,8 @@ function varargout = mmclab(varargin)
 %                       focus=0: collimated beam
 %                       focus<0: diverging beam from an imaginary src at c0-|focus|*[vx vy vz]
 %                       focus>0: converging beam, focusing to a point at c0+|focus|*[vx vy vz]
+%                       focus=nan: isotropic emission (random direction per photon)
+%                       focus=-inf: Lambertian (cosine-distributed) emission
 %                       where c0 is the centroid of the source domain. Setting focus does
 %                       not impact pencil/isotropic/cone sources.
 %
@@ -145,6 +147,15 @@ function varargout = mmclab(varargin)
 %                               the phase shift is phi{x,y}*2*pi
 %                      'zgaussian' - an angular gaussian beam, srcparam1(1) specifies the variance in
 %                               the zenith angle
+%                      'elembary' - a mesh-native volumetric source: picks one of a caller-supplied
+%                               list of existing elements by weighted random draw, then a uniform
+%                               random point inside it (barycentric sampling) -- no mesh editing
+%                               needed, so (unlike a widefield source) this can safely sit inside
+%                               real absorbing tissue. srcparam1(1) is the element count N;
+%                               srcpattern is a 2N-by-1 vector of N ascending
+%                               [cumulative-weight, 1-based-element-id] pairs (build it as
+%                               reshape([cumsum(w)'; elemid'],[],1) from your own per-element
+%                               weight vector w). Use cfg.srcdir=[...,nan] for isotropic emission.
 %      cfg.{srcparam1,srcparam2}: 1x4 vectors, see cfg.srctype for details
 %      cfg.srcpattern: see cfg.srctype for details
 %      cfg.srcnum:     the number of source patterns that are

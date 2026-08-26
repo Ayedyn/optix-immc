@@ -1747,6 +1747,50 @@ __device__ void launchnewphoton(__constant MCXParam* gcfg, ray* r, __global FLOA
         origin.y += (gcfg->srcparam1.y) * 0.5f;
         origin.z += (gcfg->srcparam1.z) * 0.5f;
         canfocus = (GPU_PARAM(gcfg, srctype) == stSlit);
+#endif
+#if defined(__NVCC__) || defined(MCX_SRC_ELEMBARY)
+        /* mesh-native volumetric source: srcpattern packs ecount [cumulative-weight,1-based-eid]
+         * pairs, ascending; pick one by weighted binary search, then a uniform point inside it */
+#ifdef __NVCC__
+    } else if (GPU_PARAM(gcfg, srctype) == MCX_SRC_ELEMBARY) {
+#endif
+        int ecount = (int)gcfg->srcparam1.x;
+        float target = rand_uniform01(ran) * srcpattern[(ecount - 1) * 2];
+        int lo = 0, hi = ecount - 1;
+
+        while (lo < hi) {
+            int mid = (lo + hi) >> 1;
+
+            if (srcpattern[mid * 2] < target) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+
+        int eid = (int)srcpattern[lo * 2 + 1];
+        __global int* elems = elem + (eid - 1) * GPU_PARAM(gcfg, elemlen);
+        float s = rand_uniform01(ran), t = rand_uniform01(ran), u = rand_uniform01(ran);
+
+        if (s + t > 1.f) {
+            s = 1.f - s;
+            t = 1.f - t;
+        }
+
+        if (t + u > 1.f) {
+            float tmp = u;
+            u = 1.f - s - t;
+            t = 1.f - tmp;
+        } else if (s + t + u > 1.f) {
+            float tmp = u;
+            u = s + t + u - 1.f;
+            s = 1.f - t - tmp;
+        }
+
+        r->p0 = FL4_3(node[elems[0] - 1]) * (1.f - s - t - u) + FL4_3(node[elems[1] - 1]) * s +
+                FL4_3(node[elems[2] - 1]) * t + FL4_3(node[elems[3] - 1]) * u;
+        r->eid = eid;
+        r->weight = 1.f;
 #ifdef __NVCC__
     }
 
