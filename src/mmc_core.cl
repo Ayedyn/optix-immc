@@ -200,7 +200,7 @@ typedef struct MMC_FLOAT3 {
 } FLOAT3;
 #define FL4(f) (f)
 #define FL3(f) (f)
-#define FL4_3(f) (f.x,f.y,f.z)
+#define FL4_3(f) ((float3)(f.x,f.y,f.z))
 #define __constant__  __constant
 #define __device__
 #ifndef NULL
